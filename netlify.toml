@@ -1,0 +1,18 @@
+# Publicación del editor de libros en Netlify.
+# Los textos de los libros NO están acá: viven en el repositorio privado
+# fundacion-meherbaba/libros, y el editor los lee y guarda a través de la
+# función netlify/functions/api.mjs con el token GITHUB_TOKEN.
+[build]
+  publish = "editor"
+  command = "echo 'El editor no necesita compilación'"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"

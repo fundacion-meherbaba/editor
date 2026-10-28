@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Editor de libros</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:wght@500&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono&display=swap">
+<link rel="stylesheet" href="editor.css">
+<script src="vendor/js-yaml.min.js"></script>
+</head>
+<body>
+
+<!-- Entrada -->
+<section id="pantalla-entrada" class="entrada" hidden>
+  <div class="entrada-caja">
+    <h1>Editor de libros</h1>
+    <p class="sub">Fundación para las Artes · Libros de y acerca de Meher Baba</p>
+    <div id="boton-google"></div>
+    <p id="entrada-error" class="error" role="alert"></p>
+    <p class="ayuda">Entrá con la cuenta de Google que te habilitaron. Si no tenés acceso, pedíselo a quien administra el editor.</p>
+  </div>
+</section>
+
+<!-- Editor -->
+<div id="app" class="app" hidden>
+  <header class="barra">
+    <div class="marca"><h1>Editor de libros</h1></div>
+    <label class="campo"><span>Libro</span><select id="sel-libro"></select></label>
+    <label class="campo crece"><span>Capítulo</span><select id="sel-cap"></select></label>
+    <div class="usuario"><span id="nombre-usuario"></span><button id="b-salir" class="link">Salir</button></div>
+  </header>
+
+  <div class="herramientas">
+    <div class="toolbar" id="toolbar" role="toolbar" aria-label="Etiquetas del libro"></div>
+    <div class="acciones-libro">
+      <button id="b-ficha">Ficha de estilos</button>
+      <button id="b-historial">Historial</button>
+      <button id="b-exportar">PDF y EPUB</button>
+    </div>
+  </div>
+
+  <div class="vistas" role="group" aria-label="Vista">
+    <button id="tab-texto" aria-pressed="true">Texto</button>
+    <button id="tab-pagina" aria-pressed="false">Página</button>
+  </div>
+
+  <main class="main" id="main" data-vista="texto">
+    <section class="panel ed">
+      <div class="panel-cab">
+        <span class="estado" id="estado">—</span>
+        <div class="guardar">
+          <input id="nota" type="text" placeholder="Qué cambiaste (opcional)" aria-label="Descripción del cambio">
+          <button id="b-guardar" class="primario">Guardar</button>
+        </div>
+      </div>
+      <div id="aviso" class="aviso" hidden></div>
+      <textarea id="src" spellcheck="true" lang="es" aria-label="Texto del capítulo"></textarea>
+    </section>
+    <section class="panel pv">
+      <div class="panel-cab">
+        <span>Página del libro</span>
+        <label class="zoom"><span>Tamaño</span>
+          <select id="zoom"><option value="0.8">Chico</option><option value="1" selected>Medio</option><option value="1.25">Grande</option></select>
+        </label>
+      </div>
+      <iframe id="vista" title="Vista previa de la página"></iframe>
+    </section>
+  </main>
+</div>
+
+<!-- Paneles -->
+<dialog id="dlg-historial" class="dlg">
+  <div class="dlg-cab"><h2>Historial del capítulo</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <p class="ayuda">Cada vez que alguien guarda, queda una versión. Podés ver cualquiera y, si hace falta, volver a usarla.</p>
+  <ol id="lista-historial" class="lista"></ol>
+</dialog>
+
+<dialog id="dlg-exportar" class="dlg">
+  <div class="dlg-cab"><h2>PDF y EPUB</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <p class="ayuda">Genera el PDF y el EPUB del libro con lo último que está guardado. Tarda uno o dos minutos.</p>
+  <button id="b-generar" class="primario">Generar ahora</button>
+  <p id="exportar-msg" class="estado-msg"></p>
+  <h3>Últimas exportaciones</h3>
+  <ol id="lista-export" class="lista"></ol>
+</dialog>
+
+<dialog id="dlg-ficha" class="dlg ancho">
+  <div class="dlg-cab"><h2>Ficha de estilos</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <p class="ayuda" id="ficha-origen"></p>
+  <dl id="ficha-specs" class="specs"></dl>
+  <div class="tabla-wrap"><table class="cat"><thead><tr><th>Etiqueta</th><th>Cómo se marca</th><th>Para qué</th><th>Cómo se imprime</th></tr></thead><tbody id="ficha-tabla"></tbody></table></div>
+</dialog>
+
+<dialog id="dlg-conflicto" class="dlg">
+  <div class="dlg-cab"><h2>Otra persona guardó cambios</h2></div>
+  <p id="conflicto-msg"></p>
+  <p class="ayuda">Tu versión no se perdió: queda guardada en este navegador hasta que decidas.</p>
+  <div class="botones">
+    <button id="b-conf-ver">Cargar la versión nueva</button>
+    <button id="b-conf-mia" class="peligro">Guardar la mía igual</button>
+    <button data-cerrar>Cancelar</button>
+  </div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>
