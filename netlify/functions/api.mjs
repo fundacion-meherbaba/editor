@@ -5,7 +5,9 @@
 // Variables de entorno (Netlify → Site configuration → Environment variables):
 //   GITHUB_TOKEN      token de GitHub con permiso de lectura/escritura en el repositorio
 //   GITHUB_REPO       dueño/repositorio (por defecto fundacion-meherbaba/libros)
-//   GITHUB_RAMA       rama de trabajo (por defecto main)
+//   GITHUB_RAMA       rama publicada: lo aprobado (por defecto main)
+//   GITHUB_BORRADOR   rama de trabajo: donde guardan los colaboradores (por defecto borrador)
+//   PUBLICADORES      correos que pueden aprobar cambios (además deben estar en EDITORES)
 //   GOOGLE_CLIENT_ID  ID de cliente OAuth de Google (para "Entrar con Google")
 //   EDITORES          correos autorizados, separados por coma (o @dominio.org para todo un dominio)
 //   SESSION_SECRET    texto largo al azar para firmar las sesiones
@@ -17,7 +19,11 @@ const DURACION_SESION = 12 * 60 * 60 * 1000; // 12 horas
 
 const env = (k, d = '') => process.env[k] || d;
 const REPO = () => env('GITHUB_REPO', 'fundacion-meherbaba/libros');
-const RAMA = () => env('GITHUB_RAMA', 'main');
+const RAMA = () => env('GITHUB_RAMA', 'main');            // versión publicada
+const BORRADOR = () => env('GITHUB_BORRADOR', 'borrador'); // versión de trabajo
+
+// Los capítulos se corrigen en el borrador; todo lo demás (fichas, diccionario) va directo a lo publicado.
+const esCapitulo = (p) => /^libros\/[^/]+\/capitulos\/[^/]+\.md$/.test(p || '');
 
 // ------------------------------------------------------------ respuestas
 const json = (data, status = 200, headers = {}) =>
@@ -37,15 +43,17 @@ function firmar(obj) {
   return `${p}.${hmac(p)}`;
 }
 
-export function autorizado(email) {
+function enLista(variable, email) {
   if (!email) return false;
   const e = email.toLowerCase();
-  return env('EDITORES')
+  return env(variable)
     .toLowerCase()
     .split(/[\s,;]+/)
     .filter(Boolean)
     .some((x) => x === e || (x.startsWith('@') && e.endsWith(x)));
 }
+export const autorizado = (email) => enLista('EDITORES', email);
+export const publicador = (email) => enLista('PUBLICADORES', email);
 
 function leerSesion(req) {
   if (!env('SESSION_SECRET')) return null;
@@ -121,11 +129,46 @@ const QUERY_ARBOL = `query($owner:String!,$name:String!,$expr:String!){
   repository(owner:$owner,name:$name){ object(expression:$expr){ ... on Tree {
     entries { name path oid type object { ... on Blob { text } } } } } } }`;
 
-async function arbol(ruta) {
+async function arbol(ruta, rama = RAMA()) {
   const [owner, name] = REPO().split('/');
-  const d = await graphql(QUERY_ARBOL, { owner, name, expr: `${RAMA()}:${ruta}` });
+  const d = await graphql(QUERY_ARBOL, { owner, name, expr: `${rama}:${ruta}` });
   return d.repository?.object?.entries || [];
 }
+
+// Crea la rama borrador (copia de lo publicado) si todavía no existe.
+let borradorListo = false;
+async function asegurarBorrador() {
+  if (borradorListo) return;
+  const r = await ghJson(`/repos/${REPO()}/git/ref/heads/${BORRADOR()}`);
+  if (!r.ok) {
+    const m = await ghJson(`/repos/${REPO()}/git/ref/heads/${RAMA()}`);
+    if (!m.ok) throw new Error('No encontré la rama publicada.');
+    const c = await ghJson(`/repos/${REPO()}/git/refs`, { method: 'POST', body: JSON.stringify({ ref: `refs/heads/${BORRADOR()}`, sha: m.datos.object.sha }) });
+    if (!c.ok && c.status !== 422) throw new Error('No pude crear la rama borrador.');
+  }
+  borradorListo = true;
+}
+
+// Versiones de un capítulo en el borrador, de la más nueva a la más vieja,
+// hasta llegar a la que coincide con lo publicado (esa queda afuera).
+const QUERY_HISTORIA = `query($owner:String!,$name:String!,$qn:String!,$path:String!,$n:Int!){
+  repository(owner:$owner,name:$name){ ref(qualifiedName:$qn){ target{ ... on Commit {
+    history(path:$path, first:$n){ nodes{ oid message author{ name email date }
+      file(path:$path){ object{ ... on Blob{ text } } } } } } } } } }`;
+
+async function historiaBorrador(ruta, publicado, n = 25) {
+  const [owner, name] = REPO().split('/');
+  const d = await graphql(QUERY_HISTORIA, { owner, name, qn: `refs/heads/${BORRADOR()}`, path: ruta, n });
+  const nodos = d.repository?.ref?.target?.history?.nodes || [];
+  const out = [];
+  for (const c of nodos) {
+    const texto = c.file?.object?.text ?? '';
+    if (normalizar(texto) === normalizar(publicado)) break;
+    out.push({ sha: c.oid, autor: c.author?.name, email: c.author?.email, fecha: c.author?.date, mensaje: (c.message || '').split('\n')[0], texto });
+  }
+  return out;
+}
+const normalizar = (t) => String(t || '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
 async function archivo(ruta, ref) {
   const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}?ref=${encodeURIComponent(ref || RAMA())}`);
@@ -134,6 +177,43 @@ async function archivo(ruta, ref) {
 }
 
 const tituloDe = (texto, nombre) => (texto?.match(/^#\s+(.+)$/m)?.[1] || nombre.replace(/\.md$/, '')).trim();
+
+// Guarda un archivo en una rama, detectando si otra persona lo cambió mientras tanto.
+async function escribir(ruta, texto, sha, mensaje, u, rama, verbo = 'Editado por') {
+  let enRama = await archivo(ruta, rama);
+  let shaEnvio = sha;
+  if (!enRama && rama === BORRADOR()) {
+    // primera corrección de este capítulo: el borrador todavía no tiene copia propia
+    const pub = await archivo(ruta, RAMA());
+    if (pub && sha && pub.sha !== sha) return conflicto(ruta, rama, pub);
+    shaEnvio = undefined;
+  } else if (enRama && sha && enRama.sha !== sha) {
+    return conflicto(ruta, rama, enRama);
+  } else if (enRama && !sha) {
+    shaEnvio = enRama.sha;
+  }
+  const cuerpo = {
+    message: String(mensaje).slice(0, 200) + `\n\n${verbo} ${u.nombre} <${u.email}> desde el editor.`,
+    content: Buffer.from(texto, 'utf8').toString('base64'),
+    branch: rama,
+    author: { name: u.nombre, email: u.email },
+    ...(shaEnvio ? { sha: shaEnvio } : {}),
+  };
+  const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}`, { method: 'PUT', body: JSON.stringify(cuerpo) });
+  if (r.ok) return json({ sha: r.datos.content.sha, commit: r.datos.commit.sha });
+  if (r.status === 409 || (r.status === 422 && /sha/i.test(JSON.stringify(r.datos)))) {
+    return conflicto(ruta, rama, (await archivo(ruta, rama)) || (await archivo(ruta, RAMA())));
+  }
+  return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
+}
+
+async function conflicto(ruta, rama, actual) {
+  const ultimo = await ghJson(`/repos/${REPO()}/commits?path=${encodeURIComponent(ruta)}&sha=${rama}&per_page=1`);
+  const c = ultimo.datos?.[0]?.commit;
+  return error(409, 'Otra persona guardó cambios en este capítulo mientras lo editabas.', {
+    actual, por: c?.author?.name, fecha: c?.author?.date,
+  });
+}
 
 const rutas = {
   // ---- públicas
@@ -147,13 +227,13 @@ const rutas = {
     if (!u) return error(401, 'No se pudo verificar la cuenta de Google.');
     if (!autorizado(u.email)) return error(403, `La cuenta ${u.email} no está habilitada. Pedile acceso a quien administra el editor.`);
     const sesion = { ...u, exp: Date.now() + DURACION_SESION };
-    return json({ email: u.email, nombre: u.nombre }, 200, { 'set-cookie': cookie(firmar(sesion), DURACION_SESION / 1000) });
+    return json({ email: u.email, nombre: u.nombre, publicador: publicador(u.email) }, 200, { 'set-cookie': cookie(firmar(sesion), DURACION_SESION / 1000) });
   },
 
   'POST /api/salir': async () => json({ ok: true }, 200, { 'set-cookie': cookie('', 0) }),
 
   // ---- con sesión
-  'GET /api/sesion': async (req, u) => json({ email: u.email, nombre: u.nombre }),
+  'GET /api/sesion': async (req, u) => json({ email: u.email, nombre: u.nombre, publicador: publicador(u.email) }),
 
   'GET /api/libros': async () => {
     const entradas = await arbol('libros');
@@ -185,10 +265,18 @@ const rutas = {
     const estilos = await archivo(`${fichaDir}/${estilosNombre}`);
     const dicNombre = ficha.texto.match(/^diccionario:\s*(\S+)/m)?.[1] || 'diccionario.txt';
     const diccionario = await archivo(`${fichaDir}/${dicNombre}`);
-    const caps = (await arbol(`${base}/capitulos`))
-      .filter((e) => e.type === 'blob' && e.name.endsWith('.md'))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((e) => ({ ruta: e.path, nombre: e.name, titulo: tituloDe(e.object?.text, e.name), sha: e.oid }));
+    await asegurarBorrador();
+    const [pub, bor] = await Promise.all([arbol(`${base}/capitulos`), arbol(`${base}/capitulos`, BORRADOR())]);
+    const mapa = new Map();
+    for (const e of pub.filter((x) => x.type === 'blob' && x.name.endsWith('.md'))) mapa.set(e.path, { pub: e });
+    for (const e of bor.filter((x) => x.type === 'blob' && x.name.endsWith('.md'))) mapa.set(e.path, { ...(mapa.get(e.path) || {}), bor: e });
+    const caps = [...mapa.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([ruta, { pub: p, bor: b }]) => {
+        const e = b || p;
+        const pendiente = !!b && (!p || normalizar(b.object?.text) !== normalizar(p.object?.text));
+        return { ruta, nombre: e.name, titulo: tituloDe(e.object?.text, e.name), sha: e.oid, pendiente, nuevo: !p };
+      });
     return json({
       id, base,
       libro: { ruta: `${base}/libro.yaml`, texto: libro.texto, sha: libro.sha },
@@ -203,31 +291,61 @@ const rutas = {
     const q = new URL(req.url).searchParams;
     const ruta = q.get('ruta');
     if (!rutaValida(ruta)) return error(400, 'Ruta inválida.');
-    const a = await archivo(ruta, q.get('ref'));
+    let a;
+    if (q.get('ref')) a = await archivo(ruta, q.get('ref'));
+    else if (esCapitulo(ruta)) a = (await archivo(ruta, BORRADOR())) || (await archivo(ruta, RAMA()));
+    else a = await archivo(ruta, RAMA());
     return a ? json(a) : error(404, 'No encontré el archivo.');
   },
 
   'PUT /api/archivo': async (req, u) => {
     const { ruta, texto, sha, mensaje } = await req.json().catch(() => ({}));
     if (!rutaEscribible(ruta) || typeof texto !== 'string') return error(400, 'Datos inválidos.');
-    const cuerpo = {
-      message: (mensaje || `Corrección en ${ruta.split('/').pop()}`).slice(0, 200) + `\n\nEditado por ${u.nombre} <${u.email}> desde el editor.`,
-      content: Buffer.from(texto, 'utf8').toString('base64'),
-      branch: RAMA(),
-      author: { name: u.nombre, email: u.email },
-      ...(sha ? { sha } : {}),
-    };
-    const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}`, { method: 'PUT', body: JSON.stringify(cuerpo) });
-    if (r.ok) return json({ sha: r.datos.content.sha, commit: r.datos.commit.sha });
-    if (r.status === 409 || (r.status === 422 && /sha/i.test(JSON.stringify(r.datos)))) {
-      const actual = await archivo(ruta);
-      const ultimo = await ghJson(`/repos/${REPO()}/commits?path=${encodeURIComponent(ruta)}&sha=${RAMA()}&per_page=1`);
-      const c = ultimo.datos?.[0]?.commit;
-      return error(409, 'Otra persona guardó cambios en este capítulo mientras lo editabas.', {
-        actual, por: c?.author?.name, fecha: c?.author?.date,
-      });
+    return escribir(ruta, texto, sha, (mensaje || `Corrección en ${ruta.split('/').pop()}`), u, esCapitulo(ruta) ? BORRADOR() : RAMA());
+  },
+
+  // ---- revisión y aprobación
+  'GET /api/pendientes': async (req) => {
+    const id = new URL(req.url).searchParams.get('libro') || '';
+    if (!/^[a-z0-9\-_]+$/i.test(id)) return error(400, 'Libro inválido.');
+    await asegurarBorrador();
+    const base = `libros/${id}/capitulos`;
+    const [pub, bor] = await Promise.all([arbol(base), arbol(base, BORRADOR())]);
+    const pm = new Map(pub.map((e) => [e.path, e]));
+    const out = [];
+    for (const b of bor.filter((x) => x.type === 'blob' && x.name.endsWith('.md'))) {
+      const p = pm.get(b.path);
+      if (p && normalizar(p.object?.text) === normalizar(b.object?.text)) continue;
+      const vers = await historiaBorrador(b.path, p?.object?.text || '', 15);
+      const autores = [...new Set(vers.map((v) => v.autor).filter(Boolean))];
+      out.push({ ruta: b.path, titulo: tituloDe(b.object?.text, b.name), nuevo: !p, autores, fecha: vers[0]?.fecha || null, guardados: vers.length });
     }
-    return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
+    return json(out.sort((a, b) => a.ruta.localeCompare(b.ruta)));
+  },
+
+  'GET /api/revision': async (req) => {
+    const ruta = new URL(req.url).searchParams.get('ruta');
+    if (!esCapitulo(ruta)) return error(400, 'Ruta inválida.');
+    await asegurarBorrador();
+    const [p, b] = await Promise.all([archivo(ruta, RAMA()), archivo(ruta, BORRADOR())]);
+    const publicado = p || { texto: '', sha: null };
+    const borrador = b || publicado;
+    const versiones = b ? await historiaBorrador(ruta, publicado.texto) : [];
+    return json({ ruta, publicado, borrador, versiones });
+  },
+
+  'POST /api/aprobar': async (req, u) => {
+    if (!publicador(u.email)) return error(403, 'Solo quien publica puede aprobar cambios.');
+    const { ruta, texto, sha, mensaje } = await req.json().catch(() => ({}));
+    if (!esCapitulo(ruta) || typeof texto !== 'string') return error(400, 'Datos inválidos.');
+    return escribir(ruta, texto, sha, `Aprobado: ${mensaje || ruta.split('/').pop()}`, u, RAMA(), 'Aprobado por');
+  },
+
+  'POST /api/rechazar': async (req, u) => {
+    if (!publicador(u.email)) return error(403, 'Solo quien publica puede rechazar cambios.');
+    const { ruta, texto, sha, mensaje } = await req.json().catch(() => ({}));
+    if (!esCapitulo(ruta) || typeof texto !== 'string') return error(400, 'Datos inválidos.');
+    return escribir(ruta, texto, sha, `Rechazado: ${mensaje || ruta.split('/').pop()}`, u, BORRADOR(), 'Rechazado por');
   },
 
   // Agrega una palabra al diccionario compartido de la colección (sin pisar a otros).
@@ -259,7 +377,8 @@ const rutas = {
   'GET /api/historial': async (req) => {
     const ruta = new URL(req.url).searchParams.get('ruta');
     if (!rutaValida(ruta)) return error(400, 'Ruta inválida.');
-    const r = await ghJson(`/repos/${REPO()}/commits?path=${encodeURIComponent(ruta)}&sha=${RAMA()}&per_page=30`);
+    const rama = esCapitulo(ruta) ? BORRADOR() : RAMA();
+    const r = await ghJson(`/repos/${REPO()}/commits?path=${encodeURIComponent(ruta)}&sha=${rama}&per_page=30`);
     if (!r.ok) return error(502, 'No pude leer el historial.');
     return json(r.datos.map((c) => ({
       sha: c.sha, autor: c.commit.author.name, fecha: c.commit.author.date, mensaje: c.commit.message.split('\n')[0],
@@ -278,10 +397,11 @@ const rutas = {
   },
 
   'POST /api/exportar': async (req) => {
-    const { libro } = await req.json().catch(() => ({}));
+    const { libro, version } = await req.json().catch(() => ({}));
     if (libro && !/^[a-z0-9\-_]+$/i.test(libro)) return error(400, 'Libro inválido.');
+    const rama = version === 'borrador' ? BORRADOR() : RAMA();
     const r = await ghJson(`/repos/${REPO()}/actions/workflows/exportar.yml/dispatches`, {
-      method: 'POST', body: JSON.stringify({ ref: RAMA(), inputs: { libro: libro || '' } }),
+      method: 'POST', body: JSON.stringify({ ref: RAMA(), inputs: { libro: libro || '', rama } }),
     });
     return r.ok ? json({ ok: true }) : error(502, 'No pude iniciar la exportación.', { detalle: r.datos?.message });
   },

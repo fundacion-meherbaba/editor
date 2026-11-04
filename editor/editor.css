@@ -145,3 +145,19 @@ table.cat code { font-family: var(--f-mono); font-size: 12px; white-space: nowra
 .orto-sugs button { padding: 2px 8px; font-size: 12px; }
 .orto-ok { color: var(--ok); }
 #orto-lista h3 { margin-top: 14px; }
+
+/* Cambios por aprobar */
+.estado.pendiente { color: var(--warn); }
+.insignia { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 99px; background: var(--warn); color: var(--panel); font-size: 11px; line-height: 18px; text-align: center; font-weight: 500; }
+.chip.autor { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.rev-titulo { font-family: var(--f-marca); font-size: 20px !important; font-weight: 500; text-transform: none !important; letter-spacing: 0 !important; color: var(--ink) !important; margin: 10px 0 6px !important; }
+.rev-resumen { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.rev-resumen span { margin-right: auto; color: var(--muted); }
+.rev-cambio { border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; overflow: hidden; }
+.rev-cambio header { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; background: var(--bg); font-size: 12px; }
+.rev-nota { color: var(--muted); font-style: italic; }
+.rev-dif { padding: 10px 12px; font: 14px/1.6 Georgia, "Times New Roman", serif; white-space: pre-wrap; overflow-wrap: break-word; max-height: 50vh; overflow: auto; }
+.rev-dif del, .rev-cambio + .ayuda del, .ayuda del { background: var(--bad-soft); color: var(--bad); text-decoration: line-through; }
+.rev-dif ins, .ayuda ins { background: var(--ok-soft); color: var(--ok); text-decoration: underline; }
+.rev-cambio footer { display: flex; gap: 8px; justify-content: flex-end; padding: 8px 10px; border-top: 1px solid var(--line); }
+.opciones-version { border: 0; padding: 0; margin: 10px 0; display: grid; gap: 6px; font-size: 13px; }

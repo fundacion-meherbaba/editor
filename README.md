@@ -14,6 +14,9 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   página con los estilos reales.
 - Al guardar, el cambio queda en `libros` con su nombre; el historial muestra quién cambió qué.
 - Si dos personas editan el mismo capítulo, avisa antes de pisar cambios ajenos.
+- **Aprobación:** lo que se guarda va a un *borrador*; la versión publicada solo cambia cuando quien
+  publica aprueba. El botón **Cambios** muestra cada cambio párrafo por párrafo (tachado lo que se quita,
+  subrayado lo que se agrega) con quién lo hizo y cuándo; se aprueba o rechaza todo junto o de a uno.
 - Botón **PDF y EPUB**: genera el libro en GitHub y permite descargarlo.
 - **Corrector ortográfico** en español (diccionario de Argentina de LibreOffice/RLA-ES, en
   `editor/vendor/diccionario/`, corre en el navegador): subraya en rojo las palabras desconocidas
@@ -34,6 +37,7 @@ Variables de entorno (*Site configuration → Environment variables*):
 | `GOOGLE_CLIENT_ID` | ID de cliente OAuth (tipo *Web application*) con el dominio del editor como *Authorized JavaScript origin* |
 | `EDITORES` | Correos habilitados, separados por coma. `@dominio.org` habilita un dominio entero |
 | `SESSION_SECRET` | Un texto largo al azar (40 caracteres o más) |
+| `PUBLICADORES` | Correos de quienes pueden aprobar cambios (también deben estar en `EDITORES`) |
 
 Para sumar o quitar colaboradores alcanza con editar `EDITORES` y volver a publicar
 (*Deploys → Trigger deploy*). El token de GitHub vence: renovarlo antes de la fecha.

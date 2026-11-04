@@ -36,6 +36,7 @@
     <div class="acciones-libro">
       <button id="b-ficha">Ficha de estilos</button>
       <button id="b-historial">Historial</button>
+      <button id="b-cambios" title="Cambios sin aprobar">Cambios</button>
       <button id="b-exportar">PDF y EPUB</button>
     </div>
   </div>
@@ -82,11 +83,20 @@
 
 <dialog id="dlg-exportar" class="dlg">
   <div class="dlg-cab"><h2>PDF y EPUB</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
-  <p class="ayuda">Genera el PDF y el EPUB del libro con lo último que está guardado. Tarda uno o dos minutos.</p>
+  <p class="ayuda">Genera el PDF y el EPUB del libro. Tarda unos minutos.</p>
+  <fieldset class="opciones-version">
+    <label><input type="radio" name="version-export" value="publicada" checked> Versión publicada <span class="ayuda">(solo lo aprobado)</span></label>
+    <label><input type="radio" name="version-export" value="borrador"> Borrador <span class="ayuda">(con los cambios sin aprobar, para revisar)</span></label>
+  </fieldset>
   <button id="b-generar" class="primario">Generar ahora</button>
   <p id="exportar-msg" class="estado-msg"></p>
   <h3>Últimas exportaciones</h3>
   <ol id="lista-export" class="lista"></ol>
+</dialog>
+
+<dialog id="dlg-revision" class="dlg ancho">
+  <div class="dlg-cab"><h2>Cambios por aprobar</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <div id="revision-cuerpo"></div>
 </dialog>
 
 <dialog id="dlg-orto" class="dlg ancho">
@@ -115,6 +125,7 @@
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
 <script src="ortografia.js"></script>
+<script src="revision.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

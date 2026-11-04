@@ -115,7 +115,8 @@ async function abrirLibro(id, capPreferido) {
   construirFicha();
   prepararVista();
   const sel = $('sel-cap'); sel.innerHTML = '';
-  d.capitulos.forEach((c, i) => sel.add(new Option(`${String(i + 1).padStart(2, '0')} · ${c.titulo}`, c.ruta)));
+  d.capitulos.forEach((c, i) => sel.add(new Option(nombreCapitulo(c, i), c.ruta)));
+  actualizarPendientes();
   const ruta = d.capitulos.some((c) => c.ruta === capPreferido) ? capPreferido : d.capitulos[0]?.ruta;
   estado.cap = null;
   if (ruta) await abrirCapitulo(ruta, true);
@@ -169,8 +170,26 @@ $('sel-cap').onchange = (e) => abrirCapitulo(e.target.value);
 function actualizarEstado() {
   const el = $('estado');
   if (estado.viendoVersion) { el.textContent = 'Viendo una versión anterior'; el.className = 'estado cambios'; return; }
+  const info = estado.libro?.capitulos.find((c) => c.ruta === estado.cap?.ruta);
   if (hayCambios()) { el.textContent = 'Cambios sin guardar'; el.className = 'estado cambios'; }
-  else { el.textContent = 'Guardado'; el.className = 'estado ok'; }
+  else if (info?.pendiente) { el.textContent = 'Guardado · falta aprobar'; el.className = 'estado pendiente'; el.title = 'Los cambios están guardados en el borrador; pasan a la versión publicada cuando quien publica los aprueba.'; }
+  else { el.textContent = 'Guardado · publicado'; el.className = 'estado ok'; el.title = 'Este capítulo coincide con la versión publicada.'; }
+}
+
+// ------------------------------------------------------------ Cambios pendientes de aprobación
+const nombreCapitulo = (c, i) => `${String(i + 1).padStart(2, '0')} · ${c.titulo}${c.pendiente ? '  ◆' : ''}`;
+function actualizarPendientes(lista) {
+  if (!estado.libro) return;
+  if (lista) {
+    const rutas = new Set(lista.map((p) => p.ruta));
+    estado.libro.capitulos.forEach((c) => { c.pendiente = rutas.has(c.ruta); });
+  }
+  const opts = [...$('sel-cap').options];
+  estado.libro.capitulos.forEach((c, i) => { const o = opts.find((x) => x.value === c.ruta); if (o) o.textContent = nombreCapitulo(c, i); });
+  const n = estado.libro.capitulos.filter((c) => c.pendiente).length;
+  $('b-cambios').innerHTML = n ? `Cambios <span class="insignia">${n}</span>` : 'Cambios';
+  $('b-cambios').title = n ? `${n} capítulo(s) con cambios sin aprobar` : 'No hay cambios pendientes';
+  actualizarEstado();
 }
 
 let tBorrador, tRender;
@@ -210,7 +229,8 @@ async function guardar(forzarSha) {
     }
     almacen.del(claveBorrador(estado.cap.ruta));
     $('nota').value = '';
-    actualizarEstado(); aviso('Guardado');
+    if (info) info.pendiente = true;
+    actualizarPendientes(); aviso(estado.usuario?.publicador ? 'Guardado en el borrador (aprobalo en «Cambios»)' : 'Guardado: queda pendiente de aprobación');
   } catch (e) {
     if (e.status === 409) {
       estado.conflicto = e.datos;
@@ -297,7 +317,8 @@ $('b-generar').onclick = async () => {
   if (hayCambios()) { if (!confirm('Tenés cambios sin guardar: el PDF se va a generar sin ellos. ¿Seguir?')) return; }
   $('exportar-msg').textContent = 'Iniciando…';
   try {
-    await api('/api/exportar', { metodo: 'POST', cuerpo: { libro: estado.libro.id } });
+    const version = document.querySelector('input[name="version-export"]:checked')?.value || 'publicada';
+    await api('/api/exportar', { metodo: 'POST', cuerpo: { libro: estado.libro.id, version } });
     $('exportar-msg').textContent = 'Listo: la exportación empezó. Aparece abajo en unos segundos.';
     setTimeout(cargarExportaciones, 4000);
   } catch (e) { $('exportar-msg').textContent = e.message; }
@@ -586,3 +607,16 @@ window.Ortografia?.iniciar({
   alAgregarPalabra: (palabra) => api('/api/diccionario', { metodo: 'POST', cuerpo: { ruta: estado.libro?.diccionarioRuta, palabra } }),
 });
 $('b-orto').onclick = () => window.Ortografia?.abrirPanel($('dlg-orto'), $('orto-lista'));
+
+// ------------------------------------------------------------ Revisión y aprobación
+window.Revision?.iniciar({
+  dialogo: $('dlg-revision'), cuerpo: $('revision-cuerpo'), api, aviso,
+  usuario: () => estado.usuario || {}, libro: () => estado.libro,
+  alActualizarPendientes: (lista) => actualizarPendientes(lista),
+  alCambiarCapitulo: (ruta) => {
+    if (estado.cap?.ruta !== ruta) return;
+    if (hayCambios()) aviso('Se rechazaron cambios de este capítulo: guardá o descartá lo tuyo y volvé a abrirlo.', 6000);
+    else abrirCapitulo(ruta, true);
+  },
+});
+$('b-cambios').onclick = () => window.Revision?.abrir();
