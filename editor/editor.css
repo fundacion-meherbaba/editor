@@ -67,7 +67,8 @@ select, input[type=text] { background: var(--panel); border: 1px solid var(--lin
 .estado.cambios { color: var(--warn); font-weight: 500; }
 .estado.ok { color: var(--ok); }
 .zoom { display: flex; gap: 6px; align-items: center; }
-textarea { flex: 1; width: 100%; min-height: 260px; border: 0; resize: none; padding: 14px; background: var(--panel); color: var(--ink);
+textarea { flex: 1; width: 100%; min-height: 260px; border: 0; resize: none; padding: 14px; background: transparent; color: var(--ink);
+  white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; tab-size: 4; position: relative; z-index: 1; margin: 0; box-sizing: border-box; -webkit-appearance: none; appearance: none; border-radius: 0;
   font: 13.5px/1.7 var(--f-mono); -webkit-text-size-adjust: 100%; }
 iframe#vista { flex: 1; width: 100%; border: 0; background: #e9e7e2; }
 .aviso { padding: 8px 12px; font-size: 13px; background: var(--warn-soft); color: var(--ink); border-bottom: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -116,3 +117,31 @@ table.cat code { font-family: var(--f-mono); font-size: 12px; white-space: nowra
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 #b-generar { margin-top: 10px; }
+
+/* Ortografía: capa de subrayados detrás del texto (misma letra, medidas y cortes de línea) */
+.texto-envoltura { position: relative; flex: 1; display: flex; min-height: 260px; background: var(--panel); overflow: hidden; }
+.marcas { position: absolute; left: 0; top: 0; overflow: hidden; pointer-events: none; z-index: 0; }
+.marcas-int { padding: 14px; box-sizing: border-box; width: 100%; font: 13.5px/1.7 var(--f-mono); white-space: pre-wrap; overflow-wrap: break-word;
+  word-break: normal; tab-size: 4; color: transparent; -webkit-text-size-adjust: 100%; will-change: transform; }
+.marcas-int mark { background: none; color: transparent; text-decoration-line: underline; text-decoration-style: wavy; text-decoration-skip-ink: none;
+  text-decoration-thickness: 1.5px; text-underline-offset: 3px; border-radius: 2px; }
+.marcas-int mark.m-orto { text-decoration-color: var(--bad); }
+.marcas-int mark.m-tipo { text-decoration-color: var(--accent); text-decoration-style: dotted; text-decoration-thickness: 2px; }
+.marcas-int mark.activa { background: var(--accent-soft); }
+.orto-control { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.orto-toggle { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+#orto-contador { font-size: 12px; }
+#b-orto[data-estado="hay"], #orto-contador[data-estado="hay"] { color: var(--bad); }
+#orto-contador[data-estado="ok"] { color: var(--ok); }
+.orto-popup { position: fixed; z-index: 20; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 6px 24px rgba(10, 14, 24, .18); padding: 8px; min-width: 220px; max-width: min(340px, calc(100vw - 16px)); font-size: 13px; }
+.orto-cab { font-size: 12px; color: var(--muted); padding: 2px 4px 6px; }
+.orto-botones { display: flex; flex-direction: column; gap: 2px; }
+.orto-botones button { text-align: left; border: 0; border-radius: 6px; padding: 7px 8px; }
+.orto-botones button.orto-sug { font-weight: 500; }
+.orto-botones hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+.orto-nota { color: var(--muted); padding: 6px 8px; font-size: 12px; }
+.orto-sugs { display: flex; flex-wrap: wrap; gap: 4px; }
+.orto-sugs button { padding: 2px 8px; font-size: 12px; }
+.orto-ok { color: var(--ok); }
+#orto-lista h3 { margin-top: 14px; }

@@ -108,7 +108,7 @@ const codificar = (ruta) => ruta.split('/').map(encodeURIComponent).join('/');
 // Solo se puede leer dentro de libros/ y colecciones/; escribir, solo texto.
 const rutaValida = (p) =>
   typeof p === 'string' && /^(libros|colecciones)\/[A-Za-z0-9_\-./]+$/.test(p) && !p.includes('..') && !p.includes('//');
-const rutaEscribible = (p) => rutaValida(p) && /\.(md|ya?ml|css)$/.test(p);
+const rutaEscribible = (p) => rutaValida(p) && /\.(md|ya?ml|css|txt)$/.test(p);
 
 const TIPOS = {
   ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2',
@@ -183,6 +183,8 @@ const rutas = {
     const fichaDir = fichaRuta.split('/').slice(0, -1).join('/');
     const estilosNombre = ficha.texto.match(/^estilos:\s*(\S+)/m)?.[1] || 'estilos.css';
     const estilos = await archivo(`${fichaDir}/${estilosNombre}`);
+    const dicNombre = ficha.texto.match(/^diccionario:\s*(\S+)/m)?.[1] || 'diccionario.txt';
+    const diccionario = await archivo(`${fichaDir}/${dicNombre}`);
     const caps = (await arbol(`${base}/capitulos`))
       .filter((e) => e.type === 'blob' && e.name.endsWith('.md'))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -192,6 +194,7 @@ const rutas = {
       libro: { ruta: `${base}/libro.yaml`, texto: libro.texto, sha: libro.sha },
       ficha: { ruta: fichaRuta, dir: fichaDir, texto: ficha.texto, sha: ficha.sha },
       estilos: { ruta: `${fichaDir}/${estilosNombre}`, texto: estilos?.texto || '', sha: estilos?.sha },
+      diccionario: { ruta: `${fichaDir}/${dicNombre}`, texto: diccionario?.texto || '' },
       capitulos: caps,
     });
   },
@@ -225,6 +228,32 @@ const rutas = {
       });
     }
     return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
+  },
+
+  // Agrega una palabra al diccionario compartido de la colección (sin pisar a otros).
+  'POST /api/diccionario': async (req, u) => {
+    const { ruta, palabra } = await req.json().catch(() => ({}));
+    const w = String(palabra || '').trim();
+    if (!rutaEscribible(ruta) || !ruta.endsWith('.txt')) return error(400, 'Diccionario inválido.');
+    if (!/^[\p{L}][\p{L}'’\-]{0,60}$/u.test(w)) return error(400, 'Solo se pueden agregar palabras (letras, guion o apóstrofo).');
+    for (let intento = 0; intento < 4; intento++) {
+      const a = await archivo(ruta);
+      const lineas = (a?.texto || '# Diccionario de la colección: una palabra por línea.\n').split('\n');
+      const cabecera = lineas.filter((l) => l.startsWith('#'));
+      const palabras = new Set(lineas.filter((l) => l.trim() && !l.startsWith('#')).map((l) => l.trim()));
+      if (palabras.has(w)) return json({ ok: true, yaEstaba: true });
+      palabras.add(w);
+      const orden = [...palabras].sort((x, y) => x.localeCompare(y, 'es', { sensitivity: 'base' }) || x.localeCompare(y));
+      const texto = [...cabecera, ...orden].join('\n') + '\n';
+      const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}`, { method: 'PUT', body: JSON.stringify({
+        message: `Diccionario: agrega «${w}»\n\nAgregada por ${u.nombre} <${u.email}> desde el editor.`,
+        content: Buffer.from(texto, 'utf8').toString('base64'), branch: RAMA(),
+        author: { name: u.nombre, email: u.email }, ...(a?.sha ? { sha: a.sha } : {}),
+      }) });
+      if (r.ok) return json({ ok: true });
+      if (r.status !== 409 && r.status !== 422) return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
+    }
+    return error(409, 'Varias personas están editando el diccionario a la vez. Probá de nuevo.');
   },
 
   'GET /api/historial': async (req) => {

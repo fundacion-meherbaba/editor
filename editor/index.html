@@ -49,13 +49,17 @@
     <section class="panel ed">
       <div class="panel-cab">
         <span class="estado" id="estado">—</span>
+        <div class="orto-control">
+          <label class="orto-toggle"><input type="checkbox" id="orto-activa" checked> Ortografía</label>
+          <button id="b-orto" class="link" title="Revisar todo el capítulo"><span id="orto-contador">cargando…</span></button>
+        </div>
         <div class="guardar">
           <input id="nota" type="text" placeholder="Qué cambiaste (opcional)" aria-label="Descripción del cambio">
           <button id="b-guardar" class="primario">Guardar</button>
         </div>
       </div>
       <div id="aviso" class="aviso" hidden></div>
-      <textarea id="src" spellcheck="true" lang="es" aria-label="Texto del capítulo"></textarea>
+      <textarea id="src" spellcheck="false" lang="es" autocorrect="off" autocapitalize="sentences" aria-label="Texto del capítulo"></textarea>
     </section>
     <section class="panel pv">
       <div class="panel-cab">
@@ -85,6 +89,11 @@
   <ol id="lista-export" class="lista"></ol>
 </dialog>
 
+<dialog id="dlg-orto" class="dlg ancho">
+  <div class="dlg-cab"><h2>Revisión del capítulo</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <div id="orto-lista"></div>
+</dialog>
+
 <dialog id="dlg-ficha" class="dlg ancho">
   <div class="dlg-cab"><h2>Ficha de estilos</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
   <p class="ayuda" id="ficha-origen"></p>
@@ -105,6 +114,7 @@
 
 <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
+<script src="ortografia.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

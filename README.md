@@ -15,6 +15,13 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
 - Al guardar, el cambio queda en `libros` con su nombre; el historial muestra quién cambió qué.
 - Si dos personas editan el mismo capítulo, avisa antes de pisar cambios ajenos.
 - Botón **PDF y EPUB**: genera el libro en GitHub y permite descargarlo.
+- **Corrector ortográfico** en español (diccionario de Argentina de LibreOffice/RLA-ES, en
+  `editor/vendor/diccionario/`, corre en el navegador): subraya en rojo las palabras desconocidas
+  y en azul la puntuación (espacios antes de signos, espacios dobles, «...», palabras repetidas).
+  Tocando una marca aparecen sugerencias; «Agregar al diccionario» guarda la palabra en el
+  diccionario de la colección (`colecciones/<colección>/diccionario.txt` del repositorio de
+  libros), compartido por todo el equipo. «Revisar» muestra el capítulo entero y corrige de a muchas.
+  No revisa la cursiva (términos en otro idioma), las direcciones ni las marcas de bloque.
 
 ## Configuración en Netlify
 

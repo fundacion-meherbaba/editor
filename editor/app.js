@@ -109,6 +109,8 @@ async function abrirLibro(id, capPreferido) {
   try { libroYaml = cargarYaml(d.libro.texto) || {}; } catch { /* se usa la ficha sin ajustes */ }
   ficha = mezclar(ficha, libroYaml.ajustes || {});
   estado.libro = { id, base: d.base, ficha, fichaRuta: d.ficha.ruta, fichaDir: d.ficha.dir, estilos: d.estilos.texto, capitulos: d.capitulos, datos: libroYaml };
+  estado.libro.diccionarioRuta = d.diccionario?.ruta;
+  window.Ortografia?.diccionario((d.diccionario?.texto || '').split('\n'));
   construirToolbar(ficha.etiquetas || []);
   construirFicha();
   prepararVista();
@@ -558,6 +560,7 @@ function aHtml(texto) {
 }
 
 function renderizar() {
+  window.Ortografia?.textoCambio();
   const d = $('vista').contentDocument;
   const c = d?.getElementById('c'); if (!c || !estado.cap) return;
   const texto = $('src').value;
@@ -573,3 +576,13 @@ function vista(v) {
 }
 $('tab-texto').onclick = () => vista('texto');
 $('tab-pagina').onclick = () => vista('pagina');
+
+// ------------------------------------------------------------ Ortografía
+window.Ortografia?.iniciar({
+  textarea: $('src'),
+  interruptor: $('orto-activa'),
+  contador: $('orto-contador'),
+  aviso,
+  alAgregarPalabra: (palabra) => api('/api/diccionario', { metodo: 'POST', cuerpo: { ruta: estado.libro?.diccionarioRuta, palabra } }),
+});
+$('b-orto').onclick = () => window.Ortografia?.abrirPanel($('dlg-orto'), $('orto-lista'));
