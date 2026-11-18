@@ -482,19 +482,26 @@ function aplicar(t) {
 }
 
 // ------------------------------------------------------------ Vista previa
-function variablesFicha(f) {
+// «letra» agranda o achica solo la tipografía (todo lo que está en pt); la página (en mm) no cambia,
+// así se ve cuántos caracteres entran por línea con una letra más chica o más grande.
+function variablesFicha(f, letra = 1) {
   const v = [];
   for (const [s, valores] of Object.entries(f)) {
     if (!valores || typeof valores !== 'object' || Array.isArray(valores) || s === 'paginacion') continue;
-    for (const [k, val] of Object.entries(valores)) v.push(`--${s}-${k}: ${k === 'familia' ? `"${val}"` : val};`);
+    for (const [k, val] of Object.entries(valores)) {
+      let x = val;
+      if (k === 'familia') x = `"${val}"`;
+      else if (letra !== 1 && /^\s*[\d.]+\s*pt\s*$/.test(String(val))) x = `${+(parseFloat(val) * letra).toFixed(2)}pt`;
+      v.push(`--${s}-${k}: ${x};`);
+    }
   }
   return `:root{${v.join('')}}`;
 }
 
 const CSS_VISTA = `
-html{background:#e9e7e2}
-body{margin:0;padding:22px 12px 60px}
-.hoja{background:#fff;color:#000;width:var(--pagina-ancho);max-width:100%;margin:0 auto;
+html{background:#e9e7e2;overflow-x:hidden}
+body{margin:0;padding:16px 12px 60px}
+.hoja{background:#fff;color:#000;width:var(--pagina-ancho);margin:0 auto;box-sizing:border-box;
   padding:var(--pagina-margen-superior) var(--pagina-margen-exterior) var(--pagina-margen-inferior) var(--pagina-margen-interior);
   box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .encabezado{font-size:var(--tipografia-pie,8pt);text-align:right;color:#555;margin-bottom:10mm}
@@ -515,20 +522,63 @@ function prepararVista() {
   const L = estado.libro;
   const estilos = (L.estilos || '').replace(/url\(["']?(?!https?:|data:|\/)([^"')]+)["']?\)/g,
     (m, rel) => `url("/api/raw?ruta=${encodeURIComponent(L.fichaDir + '/' + rel)}")`);
-  const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8"><style>${variablesFicha(L.ficha)}</style>
+  const doc = `<!doctype html><html lang="es"><head><meta charset="utf-8"><style id="vars">${variablesFicha(L.ficha, letraVista())}</style>
 <style>${estilos}</style><style>${CSS_VISTA}</style></head><body><div class="hoja"><div class="encabezado" id="enc"></div><div id="c"></div></div>
 <p class="pie-vista">Vista continua. La paginación final la hace la exportación a PDF.</p></body></html>`;
   const f = $('vista');
-  f.onload = () => { aplicarZoom(); renderizar(); };
+  f.onload = () => {
+    ajustarHoja(); renderizar();
+    f.contentWindow.addEventListener('resize', ajustarHoja);
+  };
   f.srcdoc = doc;
 }
 
-function aplicarZoom() {
-  const d = $('vista').contentDocument; if (!d?.body) return;
-  d.body.style.zoom = $('zoom').value;
+// La hoja se escala para entrar justo en el ancho del panel: se ve la página entera,
+// con los mismos cortes de línea que el libro, y nunca hace falta moverse a los costados.
+function ajustarHoja() {
+  const d = $('vista').contentDocument; const h = d?.querySelector('.hoja'); if (!h) return;
+  h.style.zoom = 1;
+  const disponible = d.documentElement.clientWidth - 24;      // padding del body
+  const ancho = h.getBoundingClientRect().width;
+  if (ancho > 0) h.style.zoom = Math.min(1.6, disponible / ancho).toFixed(4);
 }
-$('zoom').onchange = () => { aplicarZoom(); almacen.set('zoom', $('zoom').value); };
-const z = almacen.get('zoom'); if (z) $('zoom').value = z;
+const letraVista = () => +$('zoom').value || 1;
+$('zoom').onchange = () => {
+  almacen.set('letra', $('zoom').value);
+  const d = $('vista').contentDocument; const v = d?.getElementById('vars');
+  if (v && estado.libro) { v.textContent = variablesFicha(estado.libro.ficha, letraVista()); ajustarHoja(); }
+};
+{ const z = almacen.get('letra'); if (z && [...$('zoom').options].some((o) => o.value === z)) $('zoom').value = z; }
+
+// ------------------------------------------------------------ Divisor entre texto y página
+// Se arrastra para dar más lugar a uno u otro panel (también con las flechas del teclado;
+// doble clic vuelve a la mitad). La página se reacomoda sola al nuevo ancho.
+(() => {
+  const main = $('main'); const div = $('divisor'); if (!div) return;
+  const aplicar = (p) => {
+    p = Math.min(0.8, Math.max(0.2, p));
+    main.style.setProperty('--izq', `${p}fr`); main.style.setProperty('--der', `${1 - p}fr`);
+    div.setAttribute('aria-valuenow', Math.round(p * 100));
+    return p;
+  };
+  let actual = aplicar(almacen.get('divisor') ?? 0.49);
+  const guardar = () => almacen.set('divisor', actual);
+  div.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); div.setPointerCapture(e.pointerId); main.classList.add('arrastrando');
+    const r = main.getBoundingClientRect();
+    const mover = (ev) => { actual = aplicar((ev.clientX - r.left) / r.width); };
+    const soltar = () => {
+      main.classList.remove('arrastrando'); guardar();
+      div.removeEventListener('pointermove', mover); div.removeEventListener('pointerup', soltar); div.removeEventListener('pointercancel', soltar);
+    };
+    div.addEventListener('pointermove', mover); div.addEventListener('pointerup', soltar); div.addEventListener('pointercancel', soltar);
+  });
+  div.addEventListener('keydown', (e) => {
+    const paso = { ArrowLeft: -0.05, ArrowRight: 0.05 }[e.key];
+    if (paso) { e.preventDefault(); actual = aplicar(actual + paso); guardar(); }
+  });
+  div.addEventListener('dblclick', () => { actual = aplicar(0.49); guardar(); });
+})();
 
 // Convierte el texto marcado en HTML con las mismas clases que produce la exportación (herramientas/marcas.lua).
 function inline(s) {

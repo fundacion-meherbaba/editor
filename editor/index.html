@@ -62,11 +62,12 @@
       <div id="aviso" class="aviso" hidden></div>
       <textarea id="src" spellcheck="false" lang="es" autocorrect="off" autocapitalize="sentences" aria-label="Texto del capítulo"></textarea>
     </section>
+    <div class="divisor" id="divisor" role="separator" aria-orientation="vertical" aria-label="Arrastrar para cambiar el ancho del texto y de la página" aria-valuemin="20" aria-valuemax="80" tabindex="0" title="Arrastrar para ampliar el texto o la página (doble clic: mitad y mitad)"></div>
     <section class="panel pv">
       <div class="panel-cab">
         <span>Página del libro</span>
-        <label class="zoom"><span>Tamaño</span>
-          <select id="zoom"><option value="0.8">Chico</option><option value="1" selected>Medio</option><option value="1.25">Grande</option></select>
+        <label class="zoom" title="Cambia solo el tamaño de la letra; la página siempre ocupa todo el ancho"><span>Letra</span>
+          <select id="zoom"><option value="0.85">Chica</option><option value="1" selected>Como en el libro</option><option value="1.2">Grande</option><option value="1.4">Muy grande</option></select>
         </label>
       </div>
       <iframe id="vista" title="Vista previa de la página"></iframe>
