@@ -368,9 +368,11 @@ document.querySelectorAll('dialog').forEach((d) => {
 function tipoDeMarca(m) {
   const marca = (m || '').trim();
   let x;
-  if ((x = marca.match(/^:::\s*([\w-]+)/))) return { tipo: 'bloque', clase: x[1] };
+  if ((x = marca.match(/^:::\s*([\p{L}\w-]+)/u))) return { tipo: 'bloque', clase: x[1] };
   if (/^##\s+Parte\b/i.test(marca)) return { tipo: 'parte' };
-  if ((x = marca.match(/^(#{1,4})\s/))) return { tipo: 'titulo', nivel: x[1].length };
+  if ((x = marca.match(/^(#{1,4})\s.*?(\s*\{[^}]*\})?$/))) return { tipo: 'titulo', nivel: x[1].length, atributos: (x[2] || '').trim() };
+  if (/^>\s?/.test(marca)) return { tipo: 'cita' };
+  if (/^(\*\s*){3,}$|^(-\s*){3,}$/.test(marca)) return { tipo: 'separador' };
   if (/^\d+\.\s/.test(marca)) return { tipo: 'lista' };
   if (/^!\[/.test(marca)) return { tipo: 'imagen', clase: marca.match(/\{\.([\w-]+)\}/)?.[1] || 'tabla' };
   if (/^\*[^*]/.test(marca)) return { tipo: 'cursiva' };
@@ -405,7 +407,7 @@ function construirFicha() {
     ['Página', `${p.ancho} × ${p.alto}`],
     ['Márgenes', `interior ${p['margen-interior']} · exterior ${p['margen-exterior']} · superior ${p['margen-superior']} · inferior ${p['margen-inferior']}`],
     ['Tipografía', `${t.familia} · ${t.cuerpo} sobre ${t.interlineado} · sangría ${t.sangria}`],
-    ['Títulos', `discurso ${ti.discurso} · parte ${ti.parte} · subtítulo ${ti.subtitulo}`],
+    ['Títulos', Object.entries(ti).map(([k, v]) => `${k} ${v}`).join(' · ')],
     ['Capítulos', `empiezan en página ${f.paginacion?.['capitulo-empieza-en'] || 'impar'}`],
   ];
   $('ficha-specs').innerHTML = filas.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
@@ -429,7 +431,7 @@ function reemplazar(a, b, txt, selA, selB) {
   if (selA != null) ta.setSelectionRange(selA, selB);
   alEditar();
 }
-const sinMarcas = (t) => t.replace(/^#{1,4}\s+/, '').replace(/^\d{1,2}\.\s+/, '');
+const sinMarcas = (t) => t.replace(/^#{1,4}\s+/, '').replace(/\s*\{[^}]*\}\s*$/, '').replace(/^\d{1,2}\.\s+/, '').replace(/^>\s?/, '');
 
 function aplicar(t) {
   if ($('src').readOnly) { aviso('Estás viendo una versión anterior.'); return; }
@@ -439,7 +441,18 @@ function aplicar(t) {
     let base = sinMarcas(txt).trim() || 'Título';
     const pre = t.tipo === 'parte' ? '## ' : '#'.repeat(t.nivel) + ' ';
     if (t.tipo === 'parte' && !/^Parte\s+[IVXLC]+/i.test(base)) base = 'Parte I: ' + base;
-    reemplazar(a, b, pre + base, a + pre.length, a + pre.length + base.length);
+    const post = t.atributos ? ' ' + t.atributos : '';
+    reemplazar(a, b, pre + base + post, a + pre.length, a + pre.length + base.length);
+  } else if (t.tipo === 'cita') {
+    const { a, b, txt } = lineasSeleccionadas();
+    const yaEsCita = txt.split('\n').filter((x) => x.trim()).every((x) => /^>/.test(x));
+    const nuevo = yaEsCita
+      ? txt.split('\n').map((x) => x.replace(/^>\s?/, '')).join('\n')          // segundo clic: la saca
+      : (txt.trim() ? txt : 'Texto').split('\n').map((x) => (x.trim() ? '> ' + x : '>')).join('\n');
+    reemplazar(a, b, nuevo, a, a + nuevo.length);
+  } else if (t.tipo === 'separador') {
+    const { b } = lineasSeleccionadas();
+    reemplazar(b, b, '\n\n***\n', b + 7, b + 7);
   } else if (t.tipo === 'bloque') {
     const { a, b, txt } = lineasSeleccionadas();
     const cuerpo = txt.trim() ? txt : 'Texto';
@@ -471,8 +484,9 @@ function aplicar(t) {
 // ------------------------------------------------------------ Vista previa
 function variablesFicha(f) {
   const v = [];
-  for (const s of ['pagina', 'tipografia', 'titulos']) {
-    for (const [k, val] of Object.entries(f[s] || {})) v.push(`--${s}-${k}: ${k === 'familia' ? `"${val}"` : val};`);
+  for (const [s, valores] of Object.entries(f)) {
+    if (!valores || typeof valores !== 'object' || Array.isArray(valores) || s === 'paginacion') continue;
+    for (const [k, val] of Object.entries(valores)) v.push(`--${s}-${k}: ${k === 'familia' ? `"${val}"` : val};`);
   }
   return `:root{${v.join('')}}`;
 }
@@ -490,6 +504,8 @@ body{margin:0;padding:22px 12px 60px}
 .desconocida{outline:1px dashed #c0392b;outline-offset:2px}
 .desconocida::before{content:"Etiqueta desconocida: " attr(data-clase);display:block;font:11px system-ui,sans-serif;color:#c0392b}
 .falta-img{border:1px dashed #999;padding:2em;font:12px system-ui,sans-serif;color:#666}
+.marca-anio{display:block!important;font:11px system-ui,sans-serif;color:#0a5c8a;border-top:1px dashed #7fb3d5;padding-top:2px;margin:6px 0;text-align:left}
+.marca-anio::before{content:"Desde acá, el pie de página dice: "}
 .pie-vista{font:11px system-ui,sans-serif;color:#777;text-align:center;margin-top:16px}
 .ref-nota{font-size:.7em;line-height:0}
 .notas-pie{margin-top:2em;padding-top:.5em;border-top:.4pt solid #000;width:100%;font-size:8pt;line-height:10.2pt}
@@ -516,11 +532,14 @@ const z = almacen.get('zoom'); if (z) $('zoom').value = z;
 
 // Convierte el texto marcado en HTML con las mismas clases que produce la exportación (herramientas/marcas.lua).
 function inline(s) {
+  // los caracteres escapados (\* \_ \[ …) se muestran tal cual y no abren cursiva
+  const esc2 = []; s = s.replace(/\\([\\*_\[\]<`#>])/g, (m, c) => { esc2.push(c); return `\u0000${esc2.length - 1}\u0000`; });
   return esc(s)
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
     .replace(/&quot;(.+?)&quot;/g, '“$1”')
-    .replace(/(^|[\s(])--(?=\s|$)/g, '$1–');
+    .replace(/(^|[\s(])--(?=\s|$)/g, '$1–')
+    .replace(/\u0000(\d+)\u0000/g, (m, k) => esc(esc2[+k]));
 }
 function figura(linea) {
   const m = linea.match(/^!\[([^\]]*)\]\(([^)\s]+)\)(\{\.([\w-]+)\})?\s*$/); if (!m) return null;
@@ -534,45 +553,59 @@ function entradaGlosario(t) {
   return `<span class="termino">${inline(t.slice(0, c))}</span>${inline(t.slice(c))}`;
 }
 const CLASES_CONOCIDAS = () => new Set((estado.libro.ficha.etiquetas || []).map((e) => tipoDeMarca(e.marca)).filter((t) => t?.tipo === 'bloque').map((t) => t.clase));
+// Bloques que respetan los renglones («lineas: si» en la ficha)
+const CLASES_CON_RENGLONES = () => new Set((estado.libro.ficha.etiquetas || []).filter((e) => /^(si|sí|true)$/i.test(String(e.lineas ?? '')))
+  .map((e) => tipoDeMarca(e.marca)).filter((t) => t?.tipo === 'bloque').map((t) => t.clase));
 
 function aHtml(texto) {
   const notas = {}; const orden = [];
   texto = texto.replace(/^\[\^(\d+)\]:\s*(.*)$/gm, (m, id, t) => { notas[id] = t; return ''; });
   const L = texto.replace(/\r/g, '').split('\n');
   const conocidas = CLASES_CONOCIDAS();
-  let h = ''; let buf = []; let lista = [];
+  const renglones = CLASES_CON_RENGLONES();
+  let h = ''; let buf = []; let lista = []; let cita = [];
   const parrafos = (lineas, clase) => lineas.join('\n').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => {
     if (clase === 'contacto') return p.split('\n').map((x) => `<p>${inline(x)}</p>`).join('');
+    if (renglones.has(clase)) return `<p>${p.split('\n').map((x) => inline(x.trim())).join('<br>')}</p>`;
     const f = figura(p); if (f) return f;
     const plano = p.replace(/\n/g, ' ');
     return `<p>${clase === 'entrada' ? entradaGlosario(plano) : inline(plano)}</p>`;
   }).join('');
   const vaciarP = () => { if (buf.length) { h += parrafos(buf); buf = []; } };
   const vaciarL = () => { if (lista.length) { h += `<ol start="${lista[0].n}">${lista.map((x) => `<li>${inline(x.t)}</li>`).join('')}</ol>`; lista = []; } };
-  const vaciar = () => { vaciarP(); vaciarL(); };
+  const vaciarC = () => { if (cita.length) { h += `<blockquote>${parrafos(cita)}</blockquote>`; cita = []; } };
+  const vaciar = () => { vaciarP(); vaciarL(); vaciarC(); };
   for (let i = 0; i < L.length; i++) {
     const l = L[i];
-    const div = l.match(/^:::\s*([\w-]+)\s*$/);
+    const div = l.match(/^:::\s*([\p{L}\w-]+)\s*$/u);
     if (div) {
       vaciar(); const clase = div[1]; const dentro = []; i++;
       while (i < L.length && !/^:::\s*$/.test(L[i])) { dentro.push(L[i]); i++; }
+      if (clase === 'año' || clase === 'anio') {
+        h += `<div class="marca-anio">año ${esc(dentro.join(' ').trim())}</div>`; continue;
+      }
       const ok = conocidas.has(clase) || clase === 'nota-interna';
       h += `<div class="${esc(clase)}${ok ? '' : ' desconocida'}" data-clase="${esc(clase)}">${parrafos(dentro, clase)}</div>`;
       continue;
     }
-    const t = l.match(/^(#{1,4})\s+(.*)$/);
+    const q = l.match(/^>\s?(.*)$/);
+    if (q) { vaciarP(); vaciarL(); cita.push(q[1]); continue; }
+    if (cita.length && l.trim()) { cita.push(l); continue; }   // continuación perezosa de la cita
+    if (/^\s*(\*\s*){3,}$|^\s*(-\s*){3,}$/.test(l)) { vaciar(); h += '<hr>'; continue; }
+    const t = l.match(/^(#{1,4})\s+(.*?)\s*(?:\{([^}]*)\})?\s*$/);
     if (t) {
       vaciar(); const n = t[1].length, tx = t[2];
+      const clases = (t[3] || '').split(/\s+/).filter((c) => c.startsWith('.')).map((c) => c.slice(1)).join(' ');
       if (n === 2) {
         const p = tx.match(/^(Parte\s+[IVXLC]+)\s*:?\s*(.*)$/i);
         h += p ? `<h2 class="parte"><span>${esc(p[1])}</span>${p[2] ? `<span>${inline(p[2])}</span>` : ''}</h2>` : `<h2 class="seccion">${inline(tx)}</h2>`;
-      } else h += `<h${n}>${inline(tx)}</h${n}>`;
+      } else h += `<h${n}${clases ? ` class="${esc(clases)}"` : ''}>${inline(tx)}</h${n}>`;
       continue;
     }
     const li = l.match(/^(\d{1,3})\.\s+(.*)$/);
-    if (li) { vaciarP(); lista.push({ n: +li[1], t: li[2] }); continue; }
+    if (li) { vaciarP(); vaciarC(); lista.push({ n: +li[1], t: li[2] }); continue; }
     if (!l.trim()) { vaciar(); continue; }
-    vaciarL(); buf.push(l);
+    vaciarL(); vaciarC(); buf.push(l);
   }
   vaciar();
   h = h.replace(/\[\^(\d+)\]/g, (m, id) => { if (!orden.includes(id)) orden.push(id); return `<sup class="ref-nota">${orden.indexOf(id) + 1}</sup>`; });
@@ -586,7 +619,7 @@ function renderizar() {
   const c = d?.getElementById('c'); if (!c || !estado.cap) return;
   const texto = $('src').value;
   c.innerHTML = aHtml(texto);
-  d.getElementById('enc').textContent = texto.match(/^#\s+(.+)$/m)?.[1] || '';
+  d.getElementById('enc').textContent = (texto.match(/^#\s+(.+)$/m)?.[1] || '').replace(/\s*\{[^}]*\}\s*$/, '');
 }
 
 // ------------------------------------------------------------ Vista en pantallas chicas

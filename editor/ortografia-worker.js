@@ -29,6 +29,25 @@ function agregar(palabras) {
 }
 
 const esRomano = (w) => /^[IVXLCDM]+$/.test(w);
+
+// Verbos con pronombres pegados («negarle», «mírenme», «esclareciéndola»): el diccionario
+// general no los trae todos. Se acepta si, sacando los pronombres (y la tilde que agregan),
+// queda un infinitivo, un gerundio o un imperativo correcto.
+const QUITAR_TILDE = { á: 'a', é: 'e', í: 'i', ó: 'o', ú: 'u' };
+const sinTilde = (x) => x.replace(/[áéíóú]/g, (c) => QUITAR_TILDE[c]);
+function conEncliticos(w) {
+  const lw = w.toLocaleLowerCase('es');
+  const tilde = /[áéíóú]/.test(lw);
+  let base = lw;
+  for (let k = 0; k < 2; k++) {
+    const m = base.match(/^(.{2,}?)(me|te|se|nos|os|le|les|lo|los|la|las)$/); if (!m) return false;
+    base = m[1];
+    const plano = sinTilde(base);
+    const verbal = /(ar|er|ir|ír|ando|iendo|yendo)$/.test(plano) || tilde;
+    if (verbal && (corrector.correct(plano) || corrector.correct(base))) return true;
+  }
+  return false;
+}
 const LETRA = /\p{L}/u;
 
 function palabraCorrecta(w) {
@@ -38,6 +57,7 @@ function palabraCorrecta(w) {
   else if (extra.has(w) || extraMinus.has(w.toLocaleLowerCase('es'))) ok = true;
   else if (corrector.correct(w)) ok = true;
   else if (w.includes('-')) ok = w.split('-').every((p) => !p || palabraCorrecta(p));
+  else if (conEncliticos(w)) ok = true;
   else if (/^\p{Lu}[\p{Ll}]+$/u.test(w) && corrector.correct(w.toLocaleLowerCase('es'))) ok = true;
   else ok = false;
   cache.set(w, ok);
@@ -53,6 +73,8 @@ function zonasExcluidas(t) {
   agregarZ(/^::: *contacto *\n[\s\S]*?^:::\s*$/gm);          // direcciones de los centros: no se revisan
   agregarZ(/!\[[^\]\n]*\]\([^)\n]*\)(\{[^}\n]*\})?/g);
   agregarZ(/\[\^\d+\]:?/g);
+  agregarZ(/\{[.#][^}\n]*\}/g);                                  // atributos: {.sin-indice} {.media}
+  agregarZ(/^> ?/gm);                                             // marca de cita
   agregarZ(/\bhttps?:\/\/\S+|\bwww\.\S+|\S+@\S+\.\S+/g);
   agregarZ(/(?<![*\w])\*(?!\*)[^*\n]+\*(?!\*)/g, false);   // cursiva: solo se saltea la ortografía
   return z.sort((a, b) => a[0] - b[0]);

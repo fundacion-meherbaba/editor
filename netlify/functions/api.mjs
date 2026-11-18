@@ -168,6 +168,12 @@ async function historiaBorrador(ruta, publicado, n = 25) {
   }
   return out;
 }
+// «libros/x» + «../../colecciones/y/ficha.yaml» -> «colecciones/y/ficha.yaml»
+function resolver(dir, rel) {
+  const pila = [];
+  for (const p of [...dir.split('/'), ...rel.split('/')]) { if (p === '..') pila.pop(); else if (p && p !== '.') pila.push(p); }
+  return pila.join('/');
+}
 const normalizar = (t) => String(t || '').replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim();
 
 async function archivo(ruta, ref) {
@@ -241,7 +247,8 @@ const rutas = {
     for (const e of entradas.filter((x) => x.type === 'tree')) {
       const datos = await arbol(e.path);
       const yml = datos.find((x) => x.name === 'libro.yaml')?.object?.text || '';
-      libros.push({ id: e.name, titulo: yml.match(/^titulo:\s*(.+)$/m)?.[1]?.replace(/^["']|["']$/g, '') || e.name });
+      const campo = (k) => yml.match(new RegExp(`^${k}:\\s*(.+)$`, 'm'))?.[1]?.replace(/\s+#.*$/, '').replace(/^["']|["']$/g, '').trim();
+      libros.push({ id: e.name, titulo: [campo('titulo') || e.name, campo('volumen')].filter(Boolean).join(' · ') });
     }
     return json(libros);
   },
@@ -254,17 +261,15 @@ const rutas = {
     if (!libro) return error(404, 'No encontré ese libro.');
     const fichaRel = libro.texto.match(/^ficha:\s*(\S+)/m)?.[1];
     if (!fichaRel) return error(500, 'El libro no indica qué ficha usa.');
-    const partes = [...base.split('/'), ...fichaRel.split('/')];
-    const pila = [];
-    for (const p of partes) { if (p === '..') pila.pop(); else if (p && p !== '.') pila.push(p); }
-    const fichaRuta = pila.join('/');
+    const fichaRuta = resolver(base, fichaRel);
     const ficha = await archivo(fichaRuta);
     if (!ficha) return error(500, `No encontré la ficha ${fichaRuta}.`);
     const fichaDir = fichaRuta.split('/').slice(0, -1).join('/');
     const estilosNombre = ficha.texto.match(/^estilos:\s*(\S+)/m)?.[1] || 'estilos.css';
     const estilos = await archivo(`${fichaDir}/${estilosNombre}`);
     const dicNombre = ficha.texto.match(/^diccionario:\s*(\S+)/m)?.[1] || 'diccionario.txt';
-    const diccionario = await archivo(`${fichaDir}/${dicNombre}`);
+    const dicRuta = resolver(fichaDir, dicNombre);   // puede ser compartido: ../meher-baba/diccionario.txt
+    const diccionario = await archivo(dicRuta);
     await asegurarBorrador();
     const [pub, bor] = await Promise.all([arbol(`${base}/capitulos`), arbol(`${base}/capitulos`, BORRADOR())]);
     const mapa = new Map();
@@ -282,7 +287,7 @@ const rutas = {
       libro: { ruta: `${base}/libro.yaml`, texto: libro.texto, sha: libro.sha },
       ficha: { ruta: fichaRuta, dir: fichaDir, texto: ficha.texto, sha: ficha.sha },
       estilos: { ruta: `${fichaDir}/${estilosNombre}`, texto: estilos?.texto || '', sha: estilos?.sha },
-      diccionario: { ruta: `${fichaDir}/${dicNombre}`, texto: diccionario?.texto || '' },
+      diccionario: { ruta: dicRuta, texto: diccionario?.texto || '' },
       capitulos: caps,
     });
   },
