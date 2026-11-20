@@ -182,6 +182,13 @@ async function archivo(ruta, ref) {
   return { texto: Buffer.from(r.datos.content || '', 'base64').toString('utf8'), sha: r.datos.sha };
 }
 
+// libros/x/capitulos/05-algo.md -> libros/x/comentarios/05-algo.json
+const rutaComentarios = (cap) => cap.replace(/\/capitulos\/([^/]+)\.md$/, '/comentarios/$1.json');
+function leerComentarios(a) {
+  if (!a) return [];
+  try { const d = JSON.parse(a.texto); return Array.isArray(d.comentarios) ? d.comentarios : []; } catch { return []; }
+}
+
 const tituloDe = (texto, nombre) => (texto?.match(/^#\s+(.+)$/m)?.[1] || nombre.replace(/\.md$/, '')).trim();
 
 // Guarda un archivo en una rama, detectando si otra persona lo cambió mientras tanto.
@@ -271,7 +278,11 @@ const rutas = {
     const dicRuta = resolver(fichaDir, dicNombre);   // puede ser compartido: ../meher-baba/diccionario.txt
     const diccionario = await archivo(dicRuta);
     await asegurarBorrador();
-    const [pub, bor] = await Promise.all([arbol(`${base}/capitulos`), arbol(`${base}/capitulos`, BORRADOR())]);
+    const [pub, bor, com] = await Promise.all([arbol(`${base}/capitulos`), arbol(`${base}/capitulos`, BORRADOR()), arbol(`${base}/comentarios`).catch(() => [])]);
+    const abiertos = new Map();
+    for (const e of com.filter((x) => x.type === 'blob' && x.name.endsWith('.json'))) {
+      try { abiertos.set(e.name.replace(/\.json$/, '.md'), (JSON.parse(e.object?.text || '{}').comentarios || []).filter((c) => !c.resuelto).length); } catch { /* archivo dañado */ }
+    }
     const mapa = new Map();
     for (const e of pub.filter((x) => x.type === 'blob' && x.name.endsWith('.md'))) mapa.set(e.path, { pub: e });
     for (const e of bor.filter((x) => x.type === 'blob' && x.name.endsWith('.md'))) mapa.set(e.path, { ...(mapa.get(e.path) || {}), bor: e });
@@ -280,7 +291,7 @@ const rutas = {
       .map(([ruta, { pub: p, bor: b }]) => {
         const e = b || p;
         const pendiente = !!b && (!p || normalizar(b.object?.text) !== normalizar(p.object?.text));
-        return { ruta, nombre: e.name, titulo: tituloDe(e.object?.text, e.name), sha: e.oid, pendiente, nuevo: !p };
+        return { ruta, nombre: e.name, titulo: tituloDe(e.object?.text, e.name), sha: e.oid, pendiente, nuevo: !p, comentarios: abiertos.get(e.name) || 0 };
       });
     return json({
       id, base,
@@ -377,6 +388,97 @@ const rutas = {
       if (r.status !== 409 && r.status !== 422) return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
     }
     return error(409, 'Varias personas están editando el diccionario a la vez. Probá de nuevo.');
+  },
+
+  // ---- Gramática y estilo: se consulta a LanguageTool (servicio externo) párrafo por párrafo.
+  // LANGUAGETOOL_URL permite usar otro servidor (propio o de pago); LANGUAGETOOL_USUARIO y
+  // LANGUAGETOOL_CLAVE, una cuenta Premium (más consultas por minuto y textos más largos).
+  'POST /api/gramatica': async (req) => {
+    const { texto, apagadas = [], estilo = false, confusas = true } = await req.json().catch(() => ({}));
+    if (typeof texto !== 'string' || !texto.trim()) return json({ errores: [] });
+    if (texto.length > 20000) return error(413, 'Demasiado texto de una vez.');
+    const reglas = ['MORFOLOGIK_RULE_ES', 'HUNSPELL_RULE', 'WHITESPACE_RULE', 'UPPERCASE_SENTENCE_START',
+      ...(Array.isArray(apagadas) ? apagadas : []).filter((x) => /^[A-Z0-9_]{2,80}$/.test(x)).slice(0, 100)];
+    const categorias = ['TYPOS', ...(estilo ? [] : ['STYLE', 'REDUNDANCY', 'REPETITIONS_STYLE']), ...(confusas ? [] : ['CONFUSED_WORDS'])];
+    const form = new URLSearchParams({ text: texto, language: env('LANGUAGETOOL_IDIOMA', 'es'),
+      disabledRules: reglas.join(','), disabledCategories: categorias.join(','), level: estilo ? 'picky' : 'default' });
+    if (env('LANGUAGETOOL_USUARIO') && env('LANGUAGETOOL_CLAVE')) { form.set('username', env('LANGUAGETOOL_USUARIO')); form.set('apiKey', env('LANGUAGETOOL_CLAVE')); }
+    let r;
+    try {
+      r = await fetch(env('LANGUAGETOOL_URL', 'https://api.languagetool.org/v2/check'), {
+        method: 'POST', body: form, signal: AbortSignal.timeout(20000),
+        headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json', 'user-agent': 'editor-libros' } });
+    } catch { return error(504, 'El servicio de gramática no respondió a tiempo.'); }
+    if (r.status === 429) return error(429, 'El servicio de gramática pidió esperar un momento.', { esperar: 30 });
+    if (!r.ok) return error(502, 'El servicio de gramática no está disponible.', { detalle: (await r.text()).slice(0, 200) });
+    const d = await r.json();
+    return json({ errores: (d.matches || []).map((m) => ({
+      ini: m.offset, largo: m.length, mensaje: m.message, corto: m.shortMessage || '',
+      sugerencias: (m.replacements || []).slice(0, 5).map((x) => x.value),
+      regla: m.rule?.id, descripcion: m.rule?.description, categoria: m.rule?.category?.id, clase: m.rule?.issueType,
+    })) });
+  },
+
+  // ---- Comentarios: un archivo por capítulo (libros/<libro>/comentarios/<capítulo>.json), en la
+  // versión publicada, para que no pasen por la aprobación. Se guardan siempre releyendo el archivo,
+  // así dos personas pueden comentar a la vez sin pisarse.
+  'GET /api/comentarios': async (req) => {
+    const ruta = new URL(req.url).searchParams.get('ruta');
+    if (!esCapitulo(ruta)) return error(400, 'Capítulo inválido.');
+    const a = await archivo(rutaComentarios(ruta));
+    return json({ comentarios: leerComentarios(a) });
+  },
+
+  'POST /api/comentarios': async (req, u) => {
+    const { ruta, accion, id, texto, cita, antes, despues, pos } = await req.json().catch(() => ({}));
+    if (!esCapitulo(ruta)) return error(400, 'Capítulo inválido.');
+    const limpio = (x, n) => String(x ?? '').replace(/\r/g, '').slice(0, n);
+    const t = limpio(texto, 4000).trim();
+    if (['nuevo', 'responder', 'editar'].includes(accion) && !t) return error(400, 'El comentario está vacío.');
+    const rc = rutaComentarios(ruta);
+    const ahora = new Date().toISOString();
+    const nuevoId = () => `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    for (let intento = 0; intento < 4; intento++) {
+      const a = await archivo(rc);
+      const lista = leerComentarios(a);
+      const c = id ? lista.find((x) => x.id === id) : null;
+      const propio = (x) => x && (x.email || '').toLowerCase() === u.email.toLowerCase();
+      let resumen;
+      if (accion === 'nuevo') {
+        lista.push({ id: nuevoId(), autor: u.nombre, email: u.email, fecha: ahora, texto: t,
+          cita: limpio(cita, 1000), antes: limpio(antes, 80), despues: limpio(despues, 80), pos: Number.isInteger(pos) ? pos : null,
+          resuelto: false, respuestas: [] });
+        resumen = `nuevo comentario de ${u.nombre}`;
+      } else if (!c) {
+        return error(404, 'Ese comentario ya no existe (quizás lo borró otra persona).', { comentarios: lista });
+      } else if (accion === 'responder') {
+        c.respuestas = [...(c.respuestas || []), { id: nuevoId(), autor: u.nombre, email: u.email, fecha: ahora, texto: t }];
+        resumen = `respuesta de ${u.nombre}`;
+      } else if (accion === 'resolver' || accion === 'reabrir') {
+        c.resuelto = accion === 'resolver';
+        c.resueltoPor = c.resuelto ? u.nombre : undefined; c.resueltoFecha = c.resuelto ? ahora : undefined;
+        resumen = `${c.resuelto ? 'resuelto' : 'reabierto'} por ${u.nombre}`;
+      } else if (accion === 'editar') {
+        if (!propio(c)) return error(403, 'Solo quien escribió el comentario puede editarlo.');
+        c.texto = t; c.editado = ahora; resumen = `editado por ${u.nombre}`;
+      } else if (accion === 'borrar') {
+        if (!propio(c) && !publicador(u.email)) return error(403, 'Solo quien escribió el comentario (o quien publica) puede borrarlo.');
+        lista.splice(lista.indexOf(c), 1); resumen = `borrado por ${u.nombre}`;
+      } else if (accion === 'reubicar') {
+        // el texto comentado se movió: se guarda la nueva posición aproximada (no cambia nada más)
+        c.pos = Number.isInteger(pos) ? pos : c.pos; c.antes = limpio(antes, 80) || c.antes; c.despues = limpio(despues, 80) || c.despues;
+        resumen = 'reubicado';
+      } else return error(400, 'Acción desconocida.');
+      const contenido = JSON.stringify({ comentarios: lista }, null, 1) + '\n';
+      const r = await ghJson(`/repos/${REPO()}/contents/${codificar(rc)}`, { method: 'PUT', body: JSON.stringify({
+        message: `Comentarios de ${ruta.split('/').pop()}: ${resumen}\n\nDesde el editor (${u.nombre} <${u.email}>).`,
+        content: Buffer.from(contenido, 'utf8').toString('base64'), branch: RAMA(),
+        author: { name: u.nombre, email: u.email }, ...(a?.sha ? { sha: a.sha } : {}),
+      }) });
+      if (r.ok) return json({ comentarios: lista });
+      if (r.status !== 409 && r.status !== 422) return error(502, 'GitHub no aceptó el comentario.', { detalle: r.datos?.message });
+    }
+    return error(409, 'Muchas personas comentando a la vez. Probá de nuevo en un momento.');
   },
 
   'GET /api/historial': async (req) => {

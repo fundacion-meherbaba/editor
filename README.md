@@ -25,6 +25,16 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   diccionario de la colección (`colecciones/<colección>/diccionario.txt` del repositorio de
   libros), compartido por todo el equipo. «Revisar» muestra el capítulo entero y corrige de a muchas.
   No revisa la cursiva (términos en otro idioma), las direcciones ni las marcas de bloque.
+- **Gramática y estilo** (como «Ortografía y gramática» de Word): doble subrayado azul para la gramática
+  (concordancia, tildes diacríticas, palabras que se confunden) y puntos dorados para el estilo
+  (redundancias, muletillas; se activa en las opciones). Lo revisa [LanguageTool](https://languagetool.org)
+  a través de `/api/gramatica`, de a párrafos, guardando lo ya revisado. El botón de engranaje abre las
+  **Opciones de revisión** (cada tipo de marca se puede apagar, y una regla puntual también).
+- **Comentarios**: se selecciona un tramo y se toca **Comentar** (o Ctrl/⌘ + Alt + M). El tramo queda
+  resaltado en amarillo y el panel **Comentarios** los muestra con respuestas, *Resolver* y *Reabrir*.
+  Se guardan en `libros/<libro>/comentarios/<capítulo>.json` (versión publicada), no pasan por la
+  aprobación y no se imprimen. Cada comentario recuerda el texto citado y lo que lo rodea, así se
+  vuelve a ubicar aunque el capítulo cambie; si el texto ya no está, el panel lo avisa.
 
 ## Configuración en Netlify
 
@@ -38,6 +48,8 @@ Variables de entorno (*Site configuration → Environment variables*):
 | `EDITORES` | Correos habilitados, separados por coma. `@dominio.org` habilita un dominio entero |
 | `SESSION_SECRET` | Un texto largo al azar (40 caracteres o más) |
 | `PUBLICADORES` | Correos de quienes pueden aprobar cambios (también deben estar en `EDITORES`) |
+| `LANGUAGETOOL_URL` | (opcional) otro servidor de LanguageTool; por defecto el público y gratuito `https://api.languagetool.org/v2/check` (unas 20 consultas por minuto) |
+| `LANGUAGETOOL_USUARIO`, `LANGUAGETOOL_CLAVE` | (opcional) cuenta Premium de LanguageTool: más consultas y reglas adicionales |
 
 Para sumar o quitar colaboradores alcanza con editar `EDITORES` y volver a publicar
 (*Deploys → Trigger deploy*). El token de GitHub vence: renovarlo antes de la fecha.

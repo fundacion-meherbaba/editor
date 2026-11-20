@@ -93,7 +93,8 @@ const REGLAS = [
   { re: /(?<![\p{L}])(\p{L}{2,})[ \t]+\1(?![\p{L}])/giu, msg: (m) => `Palabra repetida: «${m[1]}»`, arreglo: (m) => m[1], repetida: true },
 ];
 
-function revisar(texto) {
+function revisar(texto, opc = {}) {
+  const conPuntuacion = opc.puntuacion !== false, conRepetidas = opc.repetidas !== false;
   const zonas = zonasExcluidas(texto);
   const errores = [];
   // Ortografía
@@ -104,6 +105,7 @@ function revisar(texto) {
   }
   // Puntuación y tipografía
   for (const r of REGLAS) {
+    if (r.repetida ? !conRepetidas : !conPuntuacion) continue;
     r.re.lastIndex = 0;
     for (const m of texto.matchAll(r.re)) {
       if (dentro(zonas, m.index, true)) continue;
@@ -192,7 +194,7 @@ self.onmessage = async (e) => {
     else if (d.tipo === 'agregar') { agregar(d.palabras); }
     else if (d.tipo === 'revisar') {
       const t0 = Date.now();
-      self.postMessage({ tipo: 'errores', id: d.id, errores: revisar(d.texto), ms: Date.now() - t0 });
+      self.postMessage({ tipo: 'errores', id: d.id, errores: revisar(d.texto, d.opciones), ms: Date.now() - t0 });
     } else if (d.tipo === 'sugerir') {
       self.postMessage({ tipo: 'sugerencias', id: d.id, palabra: d.palabra, sugerencias: sugerir(d.palabra) });
     }

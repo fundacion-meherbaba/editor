@@ -110,6 +110,7 @@ async function abrirLibro(id, capPreferido) {
   ficha = mezclar(ficha, libroYaml.ajustes || {});
   estado.libro = { id, base: d.base, ficha, fichaRuta: d.ficha.ruta, fichaDir: d.ficha.dir, estilos: d.estilos.texto, capitulos: d.capitulos, datos: libroYaml };
   estado.libro.diccionarioRuta = d.diccionario?.ruta;
+  estado.libro.palabrasDiccionario = (d.diccionario?.texto || '').split('\n').filter((l) => l.trim() && !l.startsWith('#')).length;
   window.Ortografia?.diccionario((d.diccionario?.texto || '').split('\n'));
   construirToolbar(ficha.etiquetas || []);
   construirFicha();
@@ -163,6 +164,7 @@ async function abrirCapitulo(ruta, forzar = false) {
     ]);
   } else if (b) almacen.del(claveBorrador(ruta));
   actualizarEstado(); renderizar(); $('vista').contentWindow?.scrollTo(0, 0);
+  window.Comentarios?.cargar(ruta);
 }
 
 $('sel-cap').onchange = (e) => abrirCapitulo(e.target.value);
@@ -177,7 +179,7 @@ function actualizarEstado() {
 }
 
 // ------------------------------------------------------------ Cambios pendientes de aprobación
-const nombreCapitulo = (c, i) => `${String(i + 1).padStart(2, '0')} · ${c.titulo}${c.pendiente ? '  ◆' : ''}`;
+const nombreCapitulo = (c, i) => `${String(i + 1).padStart(2, '0')} · ${c.titulo}${c.pendiente ? '  ◆' : ''}${c.comentarios ? `  · ${c.comentarios} coment.` : ''}`;
 function actualizarPendientes(lista) {
   if (!estado.libro) return;
   if (lista) {
@@ -665,6 +667,7 @@ function aHtml(texto) {
 
 function renderizar() {
   window.Ortografia?.textoCambio();
+  window.Comentarios?.textoCambio();
   const d = $('vista').contentDocument;
   const c = d?.getElementById('c'); if (!c || !estado.cap) return;
   const texto = $('src').value;
@@ -690,6 +693,22 @@ window.Ortografia?.iniciar({
   alAgregarPalabra: (palabra) => api('/api/diccionario', { metodo: 'POST', cuerpo: { ruta: estado.libro?.diccionarioRuta, palabra } }),
 });
 $('b-orto').onclick = () => window.Ortografia?.abrirPanel($('dlg-orto'), $('orto-lista'));
+$('b-orto-opc').onclick = () => window.Ortografia?.abrirOpciones($('dlg-orto-opc'), $('orto-opc'), estado.libro?.palabrasDiccionario || 0);
+
+// ------------------------------------------------------------ Comentarios
+// El texto y el panel de comentarios van uno al lado del otro
+(() => {
+  const env = $('src').parentNode; const fila = document.createElement('div'); fila.className = 'fila-ed';
+  env.parentNode.insertBefore(fila, env); fila.appendChild(env); fila.appendChild($('panel-com'));
+})();
+window.Comentarios?.iniciar({
+  textarea: $('src'), panel: $('panel-com'), botonPanel: $('b-comentarios'), botonComentar: $('b-comentar'),
+  api, aviso, usuario: () => estado.usuario || {}, soloLectura: () => !!estado.viendoVersion,
+  alCambiarCantidad: (ruta, n) => {
+    const c = estado.libro?.capitulos.find((x) => x.ruta === ruta);
+    if (c && c.comentarios !== n) { c.comentarios = n; actualizarPendientes(); }
+  },
+});
 
 // ------------------------------------------------------------ Revisión y aprobación
 window.Revision?.iniciar({
