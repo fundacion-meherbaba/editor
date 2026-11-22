@@ -85,7 +85,8 @@ async function iniciar() {
   } catch (e) { aviso(e.message, 5000); return; }
   const sel = $('sel-libro'); sel.innerHTML = '';
   estado.libros.forEach((l) => sel.add(new Option(l.titulo, l.id)));
-  const ultimo = almacen.get('ultimo') || {};
+  const q = new URLSearchParams(location.search);   // enlace desde el modo escucha: ?libro=…&cap=…
+  const ultimo = q.get('libro') ? { libro: q.get('libro'), cap: q.get('cap') } : (almacen.get('ultimo') || {});
   const id = estado.libros.some((l) => l.id === ultimo.libro) ? ultimo.libro : estado.libros[0]?.id;
   if (id) { sel.value = id; await abrirLibro(id, ultimo.cap); }
 }
@@ -693,6 +694,7 @@ window.Ortografia?.iniciar({
   alAgregarPalabra: (palabra) => api('/api/diccionario', { metodo: 'POST', cuerpo: { ruta: estado.libro?.diccionarioRuta, palabra } }),
 });
 $('b-orto').onclick = () => window.Ortografia?.abrirPanel($('dlg-orto'), $('orto-lista'));
+$('b-escucha').onclick = () => { location.href = `escucha.html?libro=${encodeURIComponent(estado.libro?.id || '')}&cap=${encodeURIComponent(estado.cap?.ruta || '')}`; };
 $('b-orto-opc').onclick = () => window.Ortografia?.abrirOpciones($('dlg-orto-opc'), $('orto-opc'), estado.libro?.palabrasDiccionario || 0);
 
 // ------------------------------------------------------------ Comentarios

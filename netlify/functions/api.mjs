@@ -422,6 +422,16 @@ const rutas = {
   // ---- Comentarios: un archivo por capítulo (libros/<libro>/comentarios/<capítulo>.json), en la
   // versión publicada, para que no pasen por la aprobación. Se guardan siempre releyendo el archivo,
   // así dos personas pueden comentar a la vez sin pisarse.
+  // ---- Original (inglés) emparejado párrafo por párrafo: libros/<libro>/original/<capítulo>.json
+  'GET /api/original': async (req) => {
+    const ruta = new URL(req.url).searchParams.get('ruta');
+    if (!esCapitulo(ruta)) return error(400, 'Capítulo inválido.');
+    const a = await archivo(ruta.replace(/\/capitulos\/([^/]+)\.md$/, '/original/$1.json'));
+    if (!a) return json({ titulo: '', pares: [] });
+    try { const d = JSON.parse(a.texto); return json({ titulo: d.titulo || '', pares: Array.isArray(d.pares) ? d.pares : [] }); }
+    catch { return json({ titulo: '', pares: [] }); }
+  },
+
   'GET /api/comentarios': async (req) => {
     const ruta = new URL(req.url).searchParams.get('ruta');
     if (!esCapitulo(ruta)) return error(400, 'Capítulo inválido.');

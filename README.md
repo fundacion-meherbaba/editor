@@ -36,6 +36,15 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   aprobación y no se imprimen. Cada comentario recuerda el texto citado y lo que lo rodea, así se
   vuelve a ubicar aunque el capítulo cambie; si el texto ya no está, el panel lo avisa.
 
+- **Modo escucha** (`/escucha.html`, botón *Modo escucha*): para corregir sin mirar la pantalla. Lee en voz
+  alta, párrafo por párrafo, el original en inglés y la traducción; con la voz (o el teclado, o botones
+  grandes) se dice «pausa», «seguir», «repetir», «inglés», «castellano», «siguiente», «anterior»,
+  «comentar»… El comentario dictado («listo» para terminar, «guardar» para confirmar) queda en el
+  capítulo con el nombre de quien lo dictó, y el equipo lo ve en el editor. Usa la voz del sistema
+  (speechSynthesis) y el reconocimiento de voz del navegador (Chrome, Edge o Safari). El original
+  emparejado sale de `libros/<libro>/original/*.json` (ver `herramientas/alinear_original.py` en el
+  repositorio de libros); un libro sin original se escucha solo en castellano.
+
 ## Configuración en Netlify
 
 Variables de entorno (*Site configuration → Environment variables*):

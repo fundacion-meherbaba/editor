@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Modo escucha · Editor de libros</title>
+<link rel="stylesheet" href="escucha.css">
+</head>
+<body>
+<a class="saltar" href="#controles">Ir a los controles</a>
+
+<!-- Entrada -->
+<section id="entrada" class="entrada" hidden>
+  <h1>Modo escucha</h1>
+  <p>Escuchá el original en inglés y la traducción, párrafo por párrafo, y dictá tus correcciones con la voz.</p>
+  <div id="boton-google"></div>
+  <p id="entrada-error" class="error" role="alert"></p>
+</section>
+
+<div id="app" hidden>
+  <header class="cab">
+    <h1>Modo escucha</h1>
+    <label>Libro <select id="sel-libro"></select></label>
+    <label>Capítulo <select id="sel-cap"></select></label>
+    <nav class="cab-links"><a id="ir-editor" href="/">Abrir en el editor</a> <button id="b-salir" class="link">Salir</button></nav>
+  </header>
+
+  <main>
+    <p id="estado" class="estado" role="status" aria-live="assertive"></p>
+    <p id="posicion" class="posicion"></p>
+
+    <article id="lectura" class="lectura" aria-label="Párrafo actual">
+      <section class="idioma" id="caja-en" lang="en">
+        <h2>Original en inglés</h2>
+        <p id="txt-en"></p>
+      </section>
+      <section class="idioma" id="caja-es" lang="es">
+        <h2>Traducción</h2>
+        <p id="txt-es"></p>
+      </section>
+    </article>
+
+    <section id="dictado" class="dictado" hidden aria-live="polite">
+      <h2>Tu comentario</h2>
+      <p id="txt-dictado"></p>
+      <div class="fila">
+        <button id="b-guardar" class="grande primario">Guardar</button>
+        <button id="b-redictar" class="grande">Dictar de nuevo</button>
+        <button id="b-cancelar" class="grande">Cancelar</button>
+      </div>
+      <label class="escribir">O escribilo:
+        <textarea id="dictado-teclado" rows="3"></textarea>
+      </label>
+    </section>
+
+    <nav id="controles" class="controles" aria-label="Controles de lectura">
+      <button id="b-anterior" class="grande" aria-keyshortcuts="ArrowLeft">◀ Anterior</button>
+      <button id="b-leer" class="grande primario" aria-keyshortcuts="Space">▶ Empezar</button>
+      <button id="b-siguiente" class="grande" aria-keyshortcuts="ArrowRight">Siguiente ▶</button>
+      <button id="b-repetir" class="grande" aria-keyshortcuts="R">↻ Repetir</button>
+      <button id="b-ingles" class="grande" aria-keyshortcuts="I">Inglés</button>
+      <button id="b-castellano" class="grande" aria-keyshortcuts="E">Castellano</button>
+      <button id="b-comentar" class="grande comentar" aria-keyshortcuts="C">🎤 Comentar</button>
+      <button id="b-microfono" class="grande" aria-pressed="false">🎙 Micrófono apagado</button>
+    </nav>
+
+    <details class="ayuda" id="ayuda">
+      <summary>Qué puedo decir</summary>
+      <dl>
+        <dt>«pausa» o «alto»</dt><dd>detiene la lectura</dd>
+        <dt>«seguir»</dt><dd>continúa desde donde quedó</dd>
+        <dt>«siguiente» / «anterior»</dt><dd>pasa al párrafo siguiente o vuelve al anterior</dd>
+        <dt>«repetir»</dt><dd>vuelve a leer el párrafo (inglés y castellano)</dd>
+        <dt>«inglés» / «castellano»</dt><dd>lee solo el original o solo la traducción</dd>
+        <dt>«comentar»</dt><dd>dictás tu corrección o sugerencia; al terminar, decí «listo». Después: «guardar», «de nuevo» o «cancelar»</dd>
+        <dt>«dónde estoy»</dt><dd>dice el capítulo y el párrafo</dd>
+        <dt>«más lento» / «más rápido»</dt><dd>cambia la velocidad de la voz</dd>
+        <dt>«capítulo siguiente» / «capítulo anterior» / «capítulo cinco»</dt><dd>cambia de capítulo</dd>
+        <dt>«ayuda»</dt><dd>repite esta lista en voz alta</dd>
+      </dl>
+      <p>Al dictar podés decir «coma», «punto», «punto y coma», «dos puntos», «abrir comillas» y «cerrar comillas».</p>
+      <p>Teclado: <kbd>Espacio</kbd> leer o pausar · <kbd>←</kbd> <kbd>→</kbd> párrafo anterior o siguiente · <kbd>R</kbd> repetir ·
+        <kbd>I</kbd> inglés · <kbd>E</kbd> castellano · <kbd>C</kbd> comentar · <kbd>Enter</kbd> guardar · <kbd>Esc</kbd> cancelar.</p>
+      <p>Conviene usar auriculares: así el micrófono no oye la voz que lee.</p>
+    </details>
+
+    <details class="ajustes" id="ajustes">
+      <summary>Ajustes</summary>
+      <label>Orden de lectura
+        <select id="aj-orden">
+          <option value="en-es">Inglés y después castellano</option>
+          <option value="es-en">Castellano y después inglés</option>
+          <option value="es">Solo castellano</option>
+          <option value="en">Solo inglés</option>
+        </select></label>
+      <label>Al terminar cada párrafo
+        <select id="aj-avance">
+          <option value="auto">Seguir solo con el próximo</option>
+          <option value="esperar">Esperar a que diga «seguir»</option>
+        </select></label>
+      <label>Velocidad en castellano <input id="aj-vel-es" type="range" min="0.6" max="1.6" step="0.05"> <output id="out-vel-es"></output></label>
+      <label>Velocidad en inglés <input id="aj-vel-en" type="range" min="0.6" max="1.6" step="0.05"> <output id="out-vel-en"></output></label>
+      <label>Voz en castellano <select id="aj-voz-es"></select></label>
+      <label>Voz en inglés <select id="aj-voz-en"></select></label>
+      <label>Tamaño de letra <input id="aj-letra" type="range" min="18" max="48" step="2"> <output id="out-letra"></output></label>
+      <label>Colores
+        <select id="aj-tema">
+          <option value="oscuro">Alto contraste (fondo negro)</option>
+          <option value="claro">Fondo claro</option>
+        </select></label>
+      <label class="check"><input id="aj-mostrar-en" type="checkbox"> Mostrar el texto en inglés en pantalla</label>
+    </details>
+  </main>
+</div>
+
+<script src="escucha.js"></script>
+</body>
+</html>
