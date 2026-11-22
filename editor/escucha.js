@@ -576,7 +576,7 @@ function problemaMic(err) {
   if (err === 'service-not-allowed') return esSafari ? 'Safari necesita el Dictado activado: Ajustes del Sistema, Teclado, Dictado.' : 'Este navegador no ofrece reconocimiento de voz. Usá Google Chrome.';
   if (err === 'audio-capture') return 'No encuentro el micrófono, o lo está usando otra aplicación (Zoom, Meet, WhatsApp…).';
   if (err === 'network') return navigator.brave ? 'Brave no trae reconocimiento de voz. Usá Google Chrome o Safari.'
-    : 'El reconocimiento de voz no pudo conectarse con su servicio. Si usás Brave, Arc, Opera o Vivaldi, probá con Google Chrome o Safari. Si tenés VPN o un bloqueador, probá sin.';
+    : 'El reconocimiento de voz no pudo conectarse con su servicio. Si usás Brave, Arc, Dia, Opera o Vivaldi, probá con Google Chrome o Safari: no traen reconocimiento de voz. Si tenés VPN o un bloqueador, probá sin.';
   return '';
 }
 function apagarMic(msg) {

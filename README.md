@@ -43,7 +43,7 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   capítulo con el nombre de quien lo dictó, y el equipo lo ve en el editor. Lee con voces naturales de
   Google (Text-to-Speech, si está `GOOGLE_TTS_CLAVE`; el audio queda guardado en el navegador para no
   pedirlo dos veces) o, si no, con la voz del sistema (speechSynthesis). Entiende la voz con el
-  reconocimiento del navegador (Chrome, Edge o Safari; Brave, Arc y Opera no lo traen): si se corta
+  reconocimiento del navegador (Chrome, Edge o Safari; Brave, Arc, Dia y Opera no lo traen): si se corta
   solo una y otra vez, apaga el micrófono y dice por qué. El original
   emparejado sale de `libros/<libro>/original/*.json` (ver `herramientas/alinear_original.py` en el
   repositorio de libros); un libro sin original se escucha solo en castellano.
