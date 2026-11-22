@@ -79,12 +79,16 @@
     <div class="divisor" id="divisor" role="separator" aria-orientation="vertical" aria-label="Arrastrar para cambiar el ancho del texto y de la página" aria-valuemin="20" aria-valuemax="80" tabindex="0" title="Arrastrar para ampliar el texto o la página (doble clic: mitad y mitad)"></div>
     <section class="panel pv">
       <div class="panel-cab">
-        <span>Página del libro</span>
+        <div class="pv-modo" role="group" aria-label="Qué mostrar en este panel">
+          <button id="pv-pagina" aria-pressed="true" title="Cómo queda la página impresa">Página del libro</button>
+          <button id="pv-original" aria-pressed="false" title="El original en inglés, párrafo por párrafo, junto al lugar donde estás escribiendo">Original en inglés</button>
+        </div>
         <label class="zoom" title="Cambia solo el tamaño de la letra; la página siempre ocupa todo el ancho"><span>Letra</span>
           <select id="zoom"><option value="0.85">Chica</option><option value="1" selected>Como en el libro</option><option value="1.2">Grande</option><option value="1.4">Muy grande</option></select>
         </label>
       </div>
       <iframe id="vista" title="Vista previa de la página"></iframe>
+      <div id="original" class="original" hidden aria-label="Original en inglés" tabindex="-1"></div>
     </section>
   </main>
 </div>
@@ -147,6 +151,8 @@
 <script src="ortografia.js"></script>
 <script src="revision.js"></script>
 <script src="comentarios.js"></script>
+<script src="emparejar.js"></script>
+<script src="original.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

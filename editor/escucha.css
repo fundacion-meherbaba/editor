@@ -71,6 +71,7 @@ summary { font-size: 21px; font-weight: 600; cursor: pointer; padding: 6px 0; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; }
 dt { font-weight: 600; color: var(--acento); }
 dd { margin: 0; }
+details h3 { font-size: 19px; margin: 16px 0 4px; }
 kbd { border: 1px solid var(--borde); border-radius: 5px; padding: 0 6px; font-size: .9em; }
 .ajustes label { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 10px 0; }
 .ajustes select { font-size: 19px; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--borde); background: var(--fondo); max-width: 100%; }

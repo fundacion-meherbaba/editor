@@ -36,6 +36,10 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   aprobación y no se imprimen. Cada comentario recuerda el texto citado y lo que lo rodea, así se
   vuelve a ubicar aunque el capítulo cambie; si el texto ya no está, el panel lo avisa.
 
+- **Original en inglés**: el panel derecho muestra *Página del libro* u *Original en inglés*. En el
+  original, cada párrafo en inglés lleva arriba el comienzo de su traducción; se resalta el que
+  corresponde al lugar donde está el cursor, y tocar un párrafo lleva el cursor a su traducción. El
+  emparejamiento (`emparejar.js`, compartido con el modo escucha) se rehace mientras se escribe.
 - **Modo escucha** (`/escucha.html`, botón *Modo escucha*): para corregir sin mirar la pantalla. Lee en voz
   alta, párrafo por párrafo, el original en inglés y la traducción; con la voz (o el teclado, o botones
   grandes) se dice «pausa», «seguir», «repetir», «inglés», «castellano», «siguiente», «anterior»,
@@ -44,7 +48,10 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   Google (Text-to-Speech, si está `GOOGLE_TTS_CLAVE`; el audio queda guardado en el navegador para no
   pedirlo dos veces) o, si no, con la voz del sistema (speechSynthesis). Entiende la voz con el
   reconocimiento del navegador (Chrome, Edge o Safari; Brave, Arc, Dia y Opera no lo traen): si se corta
-  solo una y otra vez, apaga el micrófono y dice por qué. El original
+  solo una y otra vez, apaga el micrófono y dice por qué. Hay una pausa breve entre el inglés y el
+  castellano y otra más larga, para pensar, antes del párrafo siguiente (las dos se ajustan; si se
+  oye hablar durante la pausa, espera más). Las instrucciones del dictado se dicen las primeras
+  veces; después lo indican sonidos cortos. El original
   emparejado sale de `libros/<libro>/original/*.json` (ver `herramientas/alinear_original.py` en el
   repositorio de libros); un libro sin original se escucha solo en castellano.
 

@@ -166,6 +166,7 @@ async function abrirCapitulo(ruta, forzar = false) {
   } else if (b) almacen.del(claveBorrador(ruta));
   actualizarEstado(); renderizar(); $('vista').contentWindow?.scrollTo(0, 0);
   window.Comentarios?.cargar(ruta);
+  window.Original?.abrir(ruta, estado.libro.capitulos.findIndex((c) => c.ruta === ruta) + 1);
 }
 
 $('sel-cap').onchange = (e) => abrirCapitulo(e.target.value);
@@ -548,10 +549,12 @@ function ajustarHoja() {
 const letraVista = () => +$('zoom').value || 1;
 $('zoom').onchange = () => {
   almacen.set('letra', $('zoom').value);
+  $('original').style.setProperty('--or-letra', letraVista());
   const d = $('vista').contentDocument; const v = d?.getElementById('vars');
   if (v && estado.libro) { v.textContent = variablesFicha(estado.libro.ficha, letraVista()); ajustarHoja(); }
 };
 { const z = almacen.get('letra'); if (z && [...$('zoom').options].some((o) => o.value === z)) $('zoom').value = z; }
+$('original').style.setProperty('--or-letra', letraVista());
 
 // ------------------------------------------------------------ Divisor entre texto y página
 // Se arrastra para dar más lugar a uno u otro panel (también con las flechas del teclado;
@@ -669,6 +672,7 @@ function aHtml(texto) {
 function renderizar() {
   window.Ortografia?.textoCambio();
   window.Comentarios?.textoCambio();
+  window.Original?.textoCambio();
   const d = $('vista').contentDocument;
   const c = d?.getElementById('c'); if (!c || !estado.cap) return;
   const texto = $('src').value;
@@ -683,6 +687,22 @@ function vista(v) {
   $('tab-pagina').setAttribute('aria-pressed', v === 'pagina');
 }
 $('tab-texto').onclick = () => vista('texto');
+
+// ------------------------------------------------------------ Panel derecho: página u original
+window.Original?.iniciar({ textarea: $('src'), contenedor: $('original'), api });
+function modoPanel(m) {
+  const original = m === 'original';
+  $('pv-pagina').setAttribute('aria-pressed', !original);
+  $('pv-original').setAttribute('aria-pressed', original);
+  $('vista').hidden = original; $('original').hidden = !original;
+  $('main').classList.toggle('con-original', original);
+  almacen.set('panel', m);
+  window.Original?.mostrar(original);
+  if (!original) ajustarHoja();
+}
+$('pv-pagina').onclick = () => modoPanel('pagina');
+$('pv-original').onclick = () => modoPanel('original');
+modoPanel(almacen.get('panel') === 'original' ? 'original' : 'pagina');
 $('tab-pagina').onclick = () => vista('pagina');
 
 // ------------------------------------------------------------ Ortografía

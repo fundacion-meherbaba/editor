@@ -34,7 +34,7 @@
     ta.addEventListener('scroll', () => { interior.style.transform = `translateY(${-ta.scrollTop}px)`; }, { passive: true });
     ta.addEventListener('input', () => { pintarPlano(); clearTimeout(tPintar); tPintar = setTimeout(ubicarYPintar, 350); });
     ta.addEventListener('click', alTocar);
-    ta.addEventListener('keyup', (e) => { if (e.key.startsWith('Arrow')) alTocar(); });
+    ta.addEventListener('keyup', (e) => { if ((e.key || '').startsWith('Arrow')) alTocar(); });
     ajustar();
 
     // Panel lateral, a la derecha del texto

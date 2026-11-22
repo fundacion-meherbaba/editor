@@ -45,7 +45,7 @@ async function mostrarEntrada(msg = '') {
 }
 
 // ------------------------------------------------------------ estado
-const AJ_DEF = { orden: 'en-es', avance: 'auto', velEs: 1, velEn: 1, vozEs: '', vozEn: '', motor: 'google', gVozEs: '', gVozEn: '', letra: 28, tema: 'auto', mostrarEn: true };
+const AJ_DEF = { orden: 'en-es', avance: 'auto', velEs: 1, velEn: 1, vozEs: '', vozEn: '', motor: 'google', gVozEs: '', gVozEn: '', letra: 28, tema: 'auto', pausaEn: 1.5, pausaEs: 4, instrucciones: 'primeras', vecesDictado: 0, mostrarEn: true };
 const E = {
   usuario: null, libros: [], libro: null, caps: [], cap: -1,
   texto: '', unidades: [], idx: 0, tituloEn: '',
@@ -55,84 +55,9 @@ const E = {
   dictado: '', provisorio: '',
 };
 
-// ------------------------------------------------------------ texto
-const plano = (md) => md
-  .replace(/^:::.*$/gm, '').replace(/^#{1,4}\s+/gm, '').replace(/\s*\{[^}]*\}\s*$/gm, '')
-  .replace(/!\[([^\]]*)\]\([^)]*\)(\{[^}]*\})?/g, 'Foto: $1').replace(/\[\^\d+\]/g, '')
-  .replace(/^>\s?/gm, '').replace(/\*+/g, '').replace(/\\(.)/g, '$1')
-  .replace(/[ \t]+/g, ' ').replace(/\n{2,}/g, '\n').trim();
-
-// Bloques del capítulo (como en herramientas/alinear_original.py)
-function bloques(texto) {
-  const partes = texto.replace(/\r/g, '').split(/\n[ \t]*\n/);
-  const out = [];
-  for (let i = 0; i < partes.length; i++) {
-    let p = partes[i].replace(/^\n+|\n+$/g, '');
-    if (!p.trim()) continue;
-    if (/^:::/.test(p) && !/(^|\n):::\s*$/.test(p.split('\n').slice(1).join('\n'))) {
-      let j = i;
-      while (j + 1 < partes.length && !/(^|\n):::\s*$/.test(partes[j])) j++;
-      p = partes.slice(i, j + 1).join('\n\n'); i = j;
-    }
-    const clase = p.match(/^:::\s*([\p{L}\w-]+)/u)?.[1];
-    if (clase === 'nota-interna' || /^\[\^\d+\]:/.test(p)) continue;
-    const tipo = /^# /.test(p) ? 'titulo' : /^#{2,4}\s/.test(p) ? 'seccion' : clase || 'parrafo';
-    out.push({ md: p, tipo, t: plano(p) });
-  }
-  return out;
-}
-
-const normal = (t) => t.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9ñ\s]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
-function parecido(a, b) {
-  const A = new Set(normal(a)), B = new Set(normal(b));
-  if (!A.size || !B.size) return a.trim() === b.trim() ? 1 : 0;
-  let c = 0; for (const w of A) if (B.has(w)) c++;
-  return c / Math.min(A.size, B.size);
-}
-
-// Une los párrafos actuales del capítulo con los pares guardados (el castellano puede haber
-// cambiado desde que se emparejó: se busca por parecido, en orden).
-function armarUnidades(texto, pares, tituloEn) {
-  const bs = bloques(texto);
-  const unidades = [];
-  const tit = bs.find((b) => b.tipo === 'titulo');
-  const numero = E.cap + 1;
-  if (tit) unidades.push({ es: [tit], en: tituloEn ? `Chapter ${numero}. ${tituloEn}` : '', titulo: true, leerEs: `Capítulo ${numero}. ${tit.t}` });
-  const cuerpo = bs.filter((b) => b.tipo !== 'titulo');
-  // piezas de los pares (un par puede abarcar varios párrafos en castellano)
-  const piezas = [];
-  pares.forEach((p, k) => { const ps = (p.es || '').split(/\n[ \t]*\n/).filter((x) => x.trim()); (ps.length ? ps : ['']).forEach((x) => piezas.push({ k, t: plano(x) })); });
-  // alineación monótona por parecido (programación dinámica)
-  const n = cuerpo.length, m = piezas.length;
-  const S = Array.from({ length: n + 1 }, () => new Float32Array(m + 1));
-  const P = Array.from({ length: n + 1 }, () => new Int8Array(m + 1));
-  for (let i = 1; i <= n; i++) for (let j = 1; j <= m; j++) {
-    const s = parecido(cuerpo[i - 1].t, piezas[j - 1].t);
-    const diag = S[i - 1][j - 1] + (s >= 0.35 ? s : -0.2);
-    const arriba = S[i - 1][j], izq = S[i][j - 1];
-    if (diag >= arriba && diag >= izq) { S[i][j] = diag; P[i][j] = 1; } else if (arriba >= izq) { S[i][j] = arriba; P[i][j] = 2; } else { S[i][j] = izq; P[i][j] = 3; }
-  }
-  const par = new Array(n).fill(-1);
-  for (let i = n, j = m; i > 0 && j > 0;) {
-    if (P[i][j] === 1) { if (parecido(cuerpo[i - 1].t, piezas[j - 1].t) >= 0.35) par[i - 1] = piezas[j - 1].k; i--; j--; }
-    else if (P[i][j] === 2) i--; else j--;
-  }
-  // unidades: párrafos seguidos con el mismo par van juntos; los pares sin castellano, solos
-  const usados = new Set(par.filter((k) => k >= 0));
-  let ultimoPar = -1;
-  for (let i = 0; i < n; i++) {
-    const k = par[i];
-    if (k >= 0) {
-      for (let q = ultimoPar + 1; q < k; q++) if (!usados.has(q) && pares[q]?.en) unidades.push({ es: [], en: pares[q].en });
-      const prev = unidades[unidades.length - 1];
-      if (prev && prev.k === k) prev.es.push(cuerpo[i]);
-      else unidades.push({ es: [cuerpo[i]], en: pares[k].en || '', k });
-      ultimoPar = Math.max(ultimoPar, k);
-    } else unidades.push({ es: [cuerpo[i]], en: '' });
-  }
-  for (let q = ultimoPar + 1; q < pares.length; q++) if (!usados.has(q) && pares[q]?.en) unidades.push({ es: [], en: pares[q].en });
-  return unidades;
-}
+// ------------------------------------------------------------ texto (emparejar.js)
+const { bloques, armarUnidades: emparejar } = window.Emparejar;
+const armarUnidades = (texto, pares, tituloEn) => emparejar(texto, pares, tituloEn, E.cap + 1);
 
 // ------------------------------------------------------------ voz que lee
 // Dos motores: «google» (voces naturales, generadas en el servidor y guardadas en el navegador
@@ -357,6 +282,18 @@ function tono(f = 880, ms = 120, vol = 0.12) {
   o.frequency.value = f; g.gain.value = vol; o.connect(g); g.connect(audio.destination);
   o.start(); o.stop(audio.currentTime + ms / 1000);
 }
+// Señales cortas, para no repetir instrucciones en voz alta (ver «Qué significan los sonidos»).
+const senal = {
+  escucho() { tono(660, 90); setTimeout(() => tono(990, 130), 110); },            // dos notas que suben: dictá
+  confirmar() { tono(990, 90); setTimeout(() => tono(990, 90), 160); },           // dos notas iguales: ¿guardo?
+  guardado() { tono(1046, 110); setTimeout(() => tono(1318, 140), 130); },        // campanita
+  descartado() { tono(660, 90); setTimeout(() => tono(440, 140), 110); },         // dos notas que bajan
+  finParrafo() { tono(523, 70, 0.06); },                                          // nota suave: momento para pensar
+  noEntendi() { tono(220, 90, 0.1); setTimeout(() => tono(220, 90, 0.1), 140); }, // nota grave doble
+  pausa() { tono(440, 120); },
+};
+// Las instrucciones habladas del dictado: las primeras veces (o siempre, o nunca, según Ajustes).
+const conInstrucciones = () => E.aj.instrucciones === 'siempre' || (E.aj.instrucciones === 'primeras' && E.aj.vecesDictado < 3);
 async function decir(t) { estado(t); await hablar(t, 'es'); }
 function estado(t) { $('estado').textContent = t; }
 
@@ -396,27 +333,40 @@ async function leer({ solo = null, desdeFase = null, desdeFrase = 0, reanudar = 
     const termino = await hablar(textoDe(u, f), f, { desde: retomar ? desdeFrase : 0, reanudar: retomar && reanudar, alAvanzar: (i) => { E.frase = i; } });
     desdeFrase = 0; reanudar = false;
     if (!termino || E.modo !== 'leyendo' || E.idx !== idxInicio) return;   // pausado o movido
-    if (k < fases.length - 1) await new Promise((r) => setTimeout(r, 450));
+    if (k < fases.length - 1 && !(await esperar(E.aj.pausaEn, idxInicio))) return;
   }
   marcarIdioma(null); E.fase = null; E.frase = 0; E.terminada = true;
   if (solo || E.aj.avance === 'esperar') {
-    E.modo = 'pausa'; actualizarBotones(); tono(660, 90);
+    E.modo = 'pausa'; actualizarBotones(); senal.finParrafo();
     estado('En pausa. Decí «seguir» para el próximo párrafo, o «comentar».');
     return;
   }
-  await new Promise((r) => setTimeout(r, 700));
-  if (E.modo !== 'leyendo' || E.idx !== idxInicio) return;
+  senal.finParrafo();
+  estado('Pausa para pensar… Decí «comentar», «repetir» o «seguir».');
+  if (!(await esperar(E.aj.pausaEs, idxInicio))) return;
   if (E.idx < E.unidades.length - 1) { E.idx++; leer(); }
   else { E.modo = 'pausa'; actualizarBotones(); await decir('Fin del capítulo. Decí «capítulo siguiente» para seguir, o «comentar».'); }
 }
 
+// Espera entre idiomas y entre párrafos. Si en ese momento se oye hablar, espera un poco más
+// (puede venir una orden); «seguir» o «siguiente» la cortan.
+async function esperar(seg, idxInicio) {
+  E.esperaHasta = Date.now() + seg * 1000;
+  while (Date.now() < E.esperaHasta) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (E.modo !== 'leyendo' || E.idx !== idxInicio) { E.esperaHasta = 0; return false; }
+  }
+  E.esperaHasta = 0;
+  return E.modo === 'leyendo' && E.idx === idxInicio;
+}
+
 function pausar() {
   if (E.modo !== 'leyendo') return;
-  callar(); E.modo = 'pausa'; actualizarBotones(); tono(440, 120);
+  callar(); E.modo = 'pausa'; actualizarBotones(); senal.pausa();
   estado('En pausa. Decí «seguir», «repetir», «inglés», «castellano» o «comentar».');
 }
 function seguir() {
-  if (E.modo === 'leyendo') return;
+  if (E.modo === 'leyendo') { if (E.esperaHasta) E.esperaHasta = 0; return; }
   if (E.modo === 'pausa' && E.fase) { leer({ desdeFase: E.fase, desdeFrase: E.frase, reanudar: true }); return; }
   if (E.modo === 'pausa' && E.terminada) { irA(E.idx + 1); return; }
   leer();
@@ -440,7 +390,9 @@ function empezarDictado() {
     $('dictado-teclado').focus(); return;
   }
   activarMicrofono(true);
-  decir('Dictá tu comentario. Para terminar, decí: listo.').then(() => { if (E.modo === 'dictando') { tono(988, 140); estado('Te escucho… (para terminar, decí «listo»)'); } });
+  const listo = () => { if (E.modo === 'dictando') { senal.escucho(); finHabla = Date.now() - 400; estado('Te escucho… (para terminar, decí «listo»)'); } };
+  if (conInstrucciones()) decir('Dictá tu comentario. Para terminar, decí: listo.').then(listo);
+  else { estado('Te escucho…'); listo(); }
 }
 function pintarDictado() {
   $('txt-dictado').innerHTML = '';
@@ -466,9 +418,10 @@ function puntuar(t) {
 async function terminarDictado() {
   const t = puntuar(($('dictado-teclado').value.trim() ? $('dictado-teclado').value : E.dictado).trim());
   E.dictado = t; E.provisorio = ''; pintarDictado();
-  if (!t) { E.modo = 'dictando'; await decir('No escuché nada. Probá de nuevo, o decí «cancelar».'); tono(988, 140); return; }
+  if (!t) { E.modo = 'dictando'; await decir(conInstrucciones() ? 'No escuché nada. Probá de nuevo, o decí «cancelar».' : 'No escuché nada.'); senal.escucho(); return; }
   E.modo = 'confirmando'; actualizarBotones();
-  await decir(`Anoté: ${t}. Para guardarlo, decí «guardar». Para dictarlo de nuevo, «de nuevo». Para descartarlo, «cancelar».`);
+  await decir(conInstrucciones() ? `Anoté: ${t}. Para guardarlo, decí «guardar». Para dictarlo de nuevo, «de nuevo». Para descartarlo, «cancelar».` : `Anoté: ${t}`);
+  if (E.modo === 'confirmando') { senal.confirmar(); estado('¿Lo guardo? Decí «guardar», «de nuevo» o «cancelar».'); }
 }
 async function guardarComentario() {
   const t = puntuar(($('dictado-teclado').value.trim() ? $('dictado-teclado').value : E.dictado).trim());
@@ -484,13 +437,17 @@ async function guardarComentario() {
       pos: i >= 0 ? i : undefined,
     } });
     $('dictado').hidden = true; E.dictado = ''; E.modo = 'pausa'; actualizarBotones();
-    tono(1046, 110); setTimeout(() => tono(1318, 140), 130);
-    await decir('Guardado. Decí «seguir» para continuar, o «repetir».');
+    senal.guardado();
+    const instr = conInstrucciones(); E.aj.vecesDictado++; guardarAjustes();
+    if (instr) await decir('Guardado. Decí «seguir» para continuar, o «repetir».');
+    else estado('Guardado. Decí «seguir» para continuar.');
   } catch (e) { await decir('No se pudo guardar: ' + e.message + '. Probá de nuevo con «guardar».'); }
 }
 function cancelarDictado() {
   $('dictado').hidden = true; E.dictado = ''; E.provisorio = ''; E.modo = 'pausa'; actualizarBotones();
-  decir('Descartado. Decí «seguir» para continuar.');
+  senal.descartado();
+  const instr = conInstrucciones(); E.aj.vecesDictado++; guardarAjustes();
+  if (instr) decir('Descartado. Decí «seguir» para continuar.'); else estado('Descartado.');
 }
 
 // ------------------------------------------------------------ órdenes por voz
@@ -549,21 +506,22 @@ function alResultado(ev) {
     if (ocupado || !final) return;
     const c = sinTildes(final);
     if (/^(guardar|guardalo|guarda|si|sí|dale|ok|okay|confirmar|listo)$/.test(c)) guardarComentario();
-    else if (/^(de nuevo|otra vez|dictar de nuevo|repetir|corregir)$/.test(c)) { E.modo = 'dictando'; E.dictado = ''; pintarDictado(); decir('Dictá de nuevo. Para terminar, decí: listo.').then(() => tono(988, 140)); }
-    else if (/^(agregar|seguir dictando|sumar|continuar)$/.test(c)) { E.modo = 'dictando'; decir('Seguí dictando. Para terminar, decí: listo.').then(() => tono(988, 140)); }
+    else if (/^(de nuevo|otra vez|dictar de nuevo|repetir|corregir)$/.test(c)) { E.modo = 'dictando'; E.dictado = ''; pintarDictado(); (conInstrucciones() ? decir('Dictá de nuevo. Para terminar, decí: listo.') : Promise.resolve(estado('Te escucho…'))).then(() => senal.escucho()); }
+    else if (/^(agregar|seguir dictando|sumar|continuar)$/.test(c)) { E.modo = 'dictando'; (conInstrucciones() ? decir('Seguí dictando. Para terminar, decí: listo.') : Promise.resolve(estado('Te escucho…'))).then(() => senal.escucho()); }
     else if (/^(cancelar|no|descartar|borrar)$/.test(c)) cancelarDictado();
     return;
   }
   const texto = (final || provisorio).trim();
   if (!texto) return;
   $('oido').textContent = `Oí: «${texto}»`;
+  if (E.esperaHasta && !hablando) E.esperaHasta = Math.max(E.esperaHasta, Date.now() + 2500);
   if (ocupado) {
     // con la voz hablando: solo «pausa», y solo si es una palabra o dos
     if (texto.split(/\s+/).length <= 2 && PARAR.test(sinTildes(texto))) pausar();
     return;
   }
   if (final && texto.split(/\s+/).length <= 5) {
-    if (!comando(texto)) estado(`No entendí «${texto}». Decí «ayuda» para escuchar las órdenes.`);
+    if (!comando(texto)) { senal.noEntendi(); estado(`No entendí «${texto}». Decí «ayuda» para escuchar las órdenes.`); }
   }
 }
 
@@ -711,7 +669,7 @@ $('b-castellano').onclick = () => { callar(); leer({ solo: 'es' }); };
 $('b-comentar').onclick = () => empezarDictado();
 $('b-microfono').onclick = () => activarMicrofono(!micActivo);
 $('b-guardar').onclick = () => guardarComentario();
-$('b-redictar').onclick = () => { E.dictado = ''; $('dictado-teclado').value = ''; E.modo = 'dictando'; pintarDictado(); actualizarBotones(); decir('Dictá de nuevo. Para terminar, decí: listo.').then(() => tono(988, 140)); };
+$('b-redictar').onclick = () => { E.dictado = ''; $('dictado-teclado').value = ''; E.modo = 'dictando'; pintarDictado(); actualizarBotones(); (conInstrucciones() ? decir('Dictá de nuevo. Para terminar, decí: listo.') : Promise.resolve(estado('Te escucho…'))).then(() => senal.escucho()); };
 $('b-cancelar').onclick = () => cancelarDictado();
 
 document.addEventListener('keydown', (e) => {
@@ -742,6 +700,9 @@ function pintarAjustes() {
   $('aj-vel-en').value = E.aj.velEn; $('out-vel-en').textContent = `${E.aj.velEn}×`;
   $('aj-letra').value = E.aj.letra; $('out-letra').textContent = `${E.aj.letra} px`;
   $('aj-tema').value = E.aj.tema; $('aj-mostrar-en').checked = E.aj.mostrarEn;
+  $('aj-pausa-en').value = E.aj.pausaEn; $('out-pausa-en').textContent = `${E.aj.pausaEn} s`;
+  $('aj-pausa-es').value = E.aj.pausaEs; $('out-pausa-es').textContent = `${E.aj.pausaEs} s`;
+  $('aj-instrucciones').value = E.aj.instrucciones;
 }
 function aplicarAjustes() {
   document.documentElement.style.setProperty('--letra', `${E.aj.letra}px`);
@@ -752,6 +713,8 @@ function aplicarAjustes() {
 const enlazar = (id, clave, conv = (x) => x) => $(id).addEventListener('input', (e) => { E.aj[clave] = conv(e.target.type === 'checkbox' ? e.target.checked : e.target.value); guardarAjustes(); aplicarAjustes(); });
 enlazar('aj-orden', 'orden'); enlazar('aj-avance', 'avance'); enlazar('aj-vel-es', 'velEs', Number); enlazar('aj-vel-en', 'velEn', Number);
 enlazar('aj-letra', 'letra', Number); enlazar('aj-tema', 'tema'); enlazar('aj-mostrar-en', 'mostrarEn');
+enlazar('aj-pausa-en', 'pausaEn', Number); enlazar('aj-pausa-es', 'pausaEs', Number);
+enlazar('aj-instrucciones', 'instrucciones', (v) => { E.aj.vecesDictado = 0; return v; });
 matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if (E.aj.tema === 'auto') aplicarAjustes(); });
 $('aj-voz-es').onchange = (e) => { E.aj[usarGoogle() ? 'gVozEs' : 'vozEs'] = e.target.value; guardarAjustes(); };
 $('aj-voz-en').onchange = (e) => { E.aj[usarGoogle() ? 'gVozEn' : 'vozEn'] = e.target.value; guardarAjustes(); };
@@ -765,4 +728,4 @@ aplicarAjustes();
   catch { mostrarEntrada(); }
 })();
 
-window.__escucha = { E, armarUnidades, bloques, comando, puntuar, alResultado, reproductor, trozos };   // para pruebas
+window.__escucha = { E, senal, armarUnidades, bloques, comando, puntuar, alResultado, reproductor, trozos };   // para pruebas
