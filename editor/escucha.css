@@ -1,6 +1,6 @@
 /* Modo escucha: letra grande, alto contraste, botones grandes. */
 :root {
-  --fondo: #000; --tinta: #fff; --tenue: #c9c9c9; --borde: #777; --acento: #ffd84d; --acento-tinta: #000;
+  --fondo: #121212; --tinta: #f0f0f0; --tenue: #c4c4c4; --borde: #777; --acento: #ffd84d; --acento-tinta: #000;
   --panel: #111; --en: #9fd3ff; --ok: #7ee08a; --mal: #ff9a9a;
   --letra: 26px;
   color-scheme: dark;
@@ -9,6 +9,10 @@
   --fondo: #fbfaf6; --tinta: #111; --tenue: #444; --borde: #888; --acento: #1d3f8f; --acento-tinta: #fff;
   --panel: #fff; --en: #0c4a8a; --ok: #1f6b2f; --mal: #a12f2f;
   color-scheme: light;
+}
+:root[data-tema="amarillo"] {
+  --fondo: #000; --tinta: #ffe45c; --tenue: #e6cf5a; --borde: #9a8a3a; --acento: #fff; --acento-tinta: #000;
+  --panel: #0b0b0b; --en: #ffffff; --ok: #9df0a8; --mal: #ff9a9a;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--fondo); color: var(--tinta); }
@@ -37,6 +41,8 @@ button.link { background: none; border: 0; text-decoration: underline; color: va
 main { max-width: 1100px; margin: 0 auto; }
 .estado { font-size: calc(var(--letra) * .85); font-weight: 600; color: var(--acento); margin: 16px 0 4px; min-height: 1.5em; }
 .posicion { color: var(--tenue); margin: 0 0 10px; font-size: 18px; }
+.oido { color: var(--tenue); margin: -4px 0 10px; font-size: 17px; min-height: 1.4em; }
+button.probar { font-size: 19px; padding: 10px 16px; border-radius: 10px; border: 2px solid var(--borde); background: var(--fondo); margin: 4px 0 8px; }
 
 .lectura { display: grid; gap: 14px; }
 .idioma { background: var(--panel); border: 2px solid var(--borde); border-radius: 14px; padding: 14px 18px; }

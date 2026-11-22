@@ -40,8 +40,11 @@ El editor nunca guarda textos acá: los lee y los guarda en `libros` a través d
   alta, párrafo por párrafo, el original en inglés y la traducción; con la voz (o el teclado, o botones
   grandes) se dice «pausa», «seguir», «repetir», «inglés», «castellano», «siguiente», «anterior»,
   «comentar»… El comentario dictado («listo» para terminar, «guardar» para confirmar) queda en el
-  capítulo con el nombre de quien lo dictó, y el equipo lo ve en el editor. Usa la voz del sistema
-  (speechSynthesis) y el reconocimiento de voz del navegador (Chrome, Edge o Safari). El original
+  capítulo con el nombre de quien lo dictó, y el equipo lo ve en el editor. Lee con voces naturales de
+  Google (Text-to-Speech, si está `GOOGLE_TTS_CLAVE`; el audio queda guardado en el navegador para no
+  pedirlo dos veces) o, si no, con la voz del sistema (speechSynthesis). Entiende la voz con el
+  reconocimiento del navegador (Chrome, Edge o Safari; Brave, Arc y Opera no lo traen): si se corta
+  solo una y otra vez, apaga el micrófono y dice por qué. El original
   emparejado sale de `libros/<libro>/original/*.json` (ver `herramientas/alinear_original.py` en el
   repositorio de libros); un libro sin original se escucha solo en castellano.
 
@@ -59,6 +62,7 @@ Variables de entorno (*Site configuration → Environment variables*):
 | `PUBLICADORES` | Correos de quienes pueden aprobar cambios (también deben estar en `EDITORES`) |
 | `LANGUAGETOOL_URL` | (opcional) otro servidor de LanguageTool; por defecto el público y gratuito `https://api.languagetool.org/v2/check` (unas 20 consultas por minuto) |
 | `LANGUAGETOOL_USUARIO`, `LANGUAGETOOL_CLAVE` | (opcional) cuenta Premium de LanguageTool: más consultas y reglas adicionales |
+| `GOOGLE_TTS_CLAVE` | (opcional) clave de API de Google Cloud, limitada a *Cloud Text-to-Speech API*, para las voces naturales del modo escucha. Sin ella se usan las voces del navegador |
 
 Para sumar o quitar colaboradores alcanza con editar `EDITORES` y volver a publicar
 (*Deploys → Trigger deploy*). El token de GitHub vence: renovarlo antes de la fecha.

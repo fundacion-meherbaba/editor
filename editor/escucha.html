@@ -28,6 +28,7 @@
   <main>
     <p id="estado" class="estado" role="status" aria-live="assertive"></p>
     <p id="posicion" class="posicion"></p>
+    <p id="oido" class="oido" aria-live="off"></p>
 
     <article id="lectura" class="lectura" aria-label="Párrafo actual">
       <section class="idioma" id="caja-en" lang="en">
@@ -100,13 +101,21 @@
         </select></label>
       <label>Velocidad en castellano <input id="aj-vel-es" type="range" min="0.6" max="1.6" step="0.05"> <output id="out-vel-es"></output></label>
       <label>Velocidad en inglés <input id="aj-vel-en" type="range" min="0.6" max="1.6" step="0.05"> <output id="out-vel-en"></output></label>
+      <label>Voces
+        <select id="aj-motor">
+          <option value="google">Voces naturales (Google)</option>
+          <option value="navegador">Voces del navegador</option>
+        </select></label>
       <label>Voz en castellano <select id="aj-voz-es"></select></label>
       <label>Voz en inglés <select id="aj-voz-en"></select></label>
+      <button id="b-probar-voz" type="button" class="probar">▶ Probar las voces</button>
       <label>Tamaño de letra <input id="aj-letra" type="range" min="18" max="48" step="2"> <output id="out-letra"></output></label>
       <label>Colores
         <select id="aj-tema">
-          <option value="oscuro">Alto contraste (fondo negro)</option>
-          <option value="claro">Fondo claro</option>
+          <option value="auto">Como la computadora (claro u oscuro)</option>
+          <option value="oscuro">Letra blanca sobre fondo oscuro</option>
+          <option value="amarillo">Letra amarilla sobre negro</option>
+          <option value="claro">Letra negra sobre fondo claro</option>
         </select></label>
       <label class="check"><input id="aj-mostrar-en" type="checkbox"> Mostrar el texto en inglés en pantalla</label>
     </details>

@@ -419,6 +419,39 @@ const rutas = {
     })) });
   },
 
+  // ---- Voces naturales para el modo escucha (Google Cloud Text-to-Speech). Necesita la
+  // variable GOOGLE_TTS_CLAVE (una clave de API limitada a «Cloud Text-to-Speech API»).
+  // Sin ella responde 503 y la página usa las voces del navegador.
+  'GET /api/voces': async () => {
+    const clave = env('GOOGLE_TTS_CLAVE');
+    if (!clave) return error(503, 'Las voces de Google no están configuradas.');
+    const r = await fetch(`https://texttospeech.googleapis.com/v1/voices?key=${encodeURIComponent(clave)}`);
+    if (!r.ok) return error(502, 'Google no devolvió la lista de voces (' + r.status + ').');
+    const d = await r.json();
+    const util = (d.voices || []).filter((v) => /^(es|en)-/.test(v.languageCodes?.[0] || '') && /Chirp3-HD|Chirp-HD|Neural2|Studio|Wavenet/.test(v.name));
+    return json({ voces: util.map((v) => ({ nombre: v.name, idioma: v.languageCodes[0], genero: v.ssmlGender })) });
+  },
+  'POST /api/voz': async (req) => {
+    const clave = env('GOOGLE_TTS_CLAVE');
+    if (!clave) return error(503, 'Las voces de Google no están configuradas.');
+    const { texto, voz } = await req.json().catch(() => ({}));
+    if (typeof texto !== 'string' || !texto.trim()) return error(400, 'Falta el texto.');
+    if (new TextEncoder().encode(texto).length > 4800) return error(413, 'Texto demasiado largo.');
+    if (typeof voz !== 'string' || !/^[a-z]{2}-[A-Z]{2}-[\w-]+$/.test(voz)) return error(400, 'Voz inválida.');
+    const r = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${encodeURIComponent(clave)}`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ input: { text: texto }, voice: { languageCode: voz.slice(0, 5), name: voz }, audioConfig: { audioEncoding: 'MP3' } }),
+    });
+    if (!r.ok) {
+      const det = await r.json().catch(() => ({}));
+      return error(502, 'Google no pudo generar la voz: ' + (det.error?.message || r.status));
+    }
+    const { audioContent } = await r.json();
+    return new Response(Buffer.from(audioContent, 'base64'), {
+      headers: { 'content-type': 'audio/mpeg', 'cache-control': 'private, max-age=31536000, immutable' },
+    });
+  },
+
   // ---- Comentarios: un archivo por capítulo (libros/<libro>/comentarios/<capítulo>.json), en la
   // versión publicada, para que no pasen por la aprobación. Se guardan siempre releyendo el archivo,
   // así dos personas pueden comentar a la vez sin pisarse.

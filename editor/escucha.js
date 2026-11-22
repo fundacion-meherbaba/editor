@@ -3,7 +3,8 @@
 // (el equipo los ve en el editor). Pensado para usarse sin mirar la pantalla: órdenes por voz,
 // teclado y botones grandes.
 //
-// Voz: speechSynthesis (la voz del sistema) y SpeechRecognition (Chrome, Edge, Safari).
+// Voz que lee: voces naturales de Google (vía /api/voz, si está configurado) o, si no, las del
+// navegador (speechSynthesis). Órdenes y dictado: SpeechRecognition (Chrome, Edge, Safari).
 'use strict';
 
 const $ = (id) => document.getElementById(id);
@@ -44,7 +45,7 @@ async function mostrarEntrada(msg = '') {
 }
 
 // ------------------------------------------------------------ estado
-const AJ_DEF = { orden: 'en-es', avance: 'auto', velEs: 1, velEn: 1, vozEs: '', vozEn: '', letra: 28, tema: 'oscuro', mostrarEn: true };
+const AJ_DEF = { orden: 'en-es', avance: 'auto', velEs: 1, velEn: 1, vozEs: '', vozEn: '', motor: 'google', gVozEs: '', gVozEn: '', letra: 28, tema: 'auto', mostrarEn: true };
 const E = {
   usuario: null, libros: [], libro: null, caps: [], cap: -1,
   texto: '', unidades: [], idx: 0, tituloEn: '',
@@ -134,26 +135,57 @@ function armarUnidades(texto, pares, tituloEn) {
 }
 
 // ------------------------------------------------------------ voz que lee
+// Dos motores: «google» (voces naturales, generadas en el servidor y guardadas en el navegador
+// para no pedirlas dos veces) y «navegador» (speechSynthesis, sin costo y sin conexión).
 const sintesis = window.speechSynthesis;
-let voces = [];
+let voces = [];             // voces del navegador
+let vocesGoogle = null;     // [{nombre, idioma, genero}] o null si no están configuradas
+let googleCaidoHasta = 0;  // si Google falla, unos minutos con la voz del navegador antes de reintentar
+const usarGoogle = () => E.aj.motor === 'google' && vocesGoogle && vocesGoogle.length > 0 && Date.now() > googleCaidoHasta;
+
 function cargarVoces() {
   voces = sintesis ? sintesis.getVoices() : [];
+  llenarVoces();
+}
+function llenarVoces() {
+  const g = usarGoogle();
   const llenar = (sel, pref, actual) => {
-    const lista = voces.filter((v) => v.lang.toLowerCase().startsWith(pref));
-    const puntaje = (v) => (/natural|neural|premium|enhanced|mejorada|google/i.test(v.name) ? 2 : 0) + (pref === 'es' && /es[-_](AR|419|US|MX|UY)/i.test(v.lang) ? 1 : 0) + (v.localService ? 0.5 : 0);
-    lista.sort((a, b) => puntaje(b) - puntaje(a));
     sel.innerHTML = '';
-    lista.forEach((v) => sel.add(new Option(`${v.name} (${v.lang})`, v.name)));
+    let lista;
+    if (g) {
+      const puntaje = (v) => (/Chirp3-HD/.test(v.nombre) ? 3 : /Chirp-HD|Studio|Neural2/.test(v.nombre) ? 2 : 1) + (pref === 'es' && v.idioma === 'es-US' ? 0.5 : 0) + (pref === 'en' && v.idioma === 'en-US' ? 0.5 : 0);
+      lista = vocesGoogle.filter((v) => v.idioma.startsWith(pref)).sort((a, b) => puntaje(b) - puntaje(a) || a.nombre.localeCompare(b.nombre));
+      const tipo = (n) => (/Chirp3-HD/.test(n) ? 'Chirp 3 HD' : /Chirp-HD/.test(n) ? 'Chirp HD' : /Studio/.test(n) ? 'Studio' : /Neural2/.test(n) ? 'Neural2' : 'WaveNet');
+      const gen = { FEMALE: 'mujer', MALE: 'hombre' };
+      lista.forEach((v) => sel.add(new Option(`${v.nombre.split('-').pop()} · ${tipo(v.nombre)} · ${v.idioma}${gen[v.genero] ? ' · ' + gen[v.genero] : ''}`, v.nombre)));
+      lista = lista.map((v) => v.nombre);
+    } else {
+      const vs = voces.filter((v) => v.lang.toLowerCase().startsWith(pref));
+      const puntaje = (v) => (/natural|neural|premium|enhanced|mejorada|google|siri/i.test(v.name) ? 2 : 0) + (pref === 'es' && /es[-_](AR|419|US|MX|UY)/i.test(v.lang) ? 1 : 0) + (v.localService ? 0.5 : 0);
+      vs.sort((a, b) => puntaje(b) - puntaje(a));
+      vs.forEach((v) => sel.add(new Option(`${v.name} (${v.lang})`, v.name)));
+      lista = vs.map((v) => v.name);
+    }
     if (!lista.length) sel.add(new Option('(no hay voces en este idioma)', ''));
-    sel.value = lista.some((v) => v.name === actual) ? actual : (lista[0]?.name || '');
+    sel.value = lista.includes(actual) ? actual : (lista[0] || '');
   };
-  llenar($('aj-voz-es'), 'es', E.aj.vozEs);
-  llenar($('aj-voz-en'), 'en', E.aj.vozEn);
+  llenar($('aj-voz-es'), 'es', g ? E.aj.gVozEs : E.aj.vozEs);
+  llenar($('aj-voz-en'), 'en', g ? E.aj.gVozEn : E.aj.vozEn);
+  const m = $('aj-motor');
+  m.options[0].disabled = !(vocesGoogle && vocesGoogle.length);
+  m.options[0].textContent = vocesGoogle && vocesGoogle.length ? 'Voces naturales (Google)' : 'Voces naturales (Google) — no configuradas';
+  m.value = g ? 'google' : 'navegador';
 }
 if (sintesis) { cargarVoces(); sintesis.onvoiceschanged = cargarVoces; }
+async function cargarVocesGoogle() {
+  try { vocesGoogle = (await api('/api/voces')).voces || []; } catch { vocesGoogle = null; }
+  llenarVoces();
+}
 
 const voz = (lang) => voces.find((v) => v.name === (lang === 'en' ? $('aj-voz-en').value : $('aj-voz-es').value))
   || voces.find((v) => v.lang.toLowerCase().startsWith(lang));
+const vozGoogle = (lang) => (lang === 'en' ? $('aj-voz-en').value : $('aj-voz-es').value)
+  || vocesGoogle.find((v) => v.idioma.startsWith(lang))?.nombre;
 
 // Partir en oraciones: Chrome corta las lecturas largas, y así se puede seguir desde la oración donde se pausó.
 function oraciones(t) {
@@ -170,15 +202,31 @@ function oraciones(t) {
   }
   return out.filter(Boolean);
 }
+// Para las voces de Google: trozos más largos (menos pedidos y entonación más natural); el
+// primero, corto, para que empiece enseguida.
+function trozos(t) {
+  const out = []; let buf = '';
+  for (const o of oraciones(t)) {
+    const max = out.length ? 900 : 260;
+    if (buf && (buf + ' ' + o).length > max) { out.push(buf); buf = ''; }
+    buf = buf ? buf + ' ' + o : o;
+  }
+  if (buf) out.push(buf);
+  return out;
+}
 
 let tokenHabla = 0;
 let hablando = false, finHabla = 0;
-function hablar(texto, lang, desde = 0, alAvanzar) {
+function hablar(texto, lang, op = {}) {
+  return usarGoogle() ? hablarGoogle(texto, lang, op) : hablarNavegador(texto, lang, op);
+}
+function hablarNavegador(texto, lang, { desde = 0, alAvanzar } = {}) {
   return new Promise((ok) => {
     if (!sintesis || !texto) { ok(true); return; }
     const mio = ++tokenHabla;
+    reproductor.pause();
     const partes = oraciones(texto);
-    let i = desde;
+    let i = Math.min(desde, partes.length);
     const una = () => {
       if (mio !== tokenHabla) { ok(false); return; }
       if (i >= partes.length) { hablando = false; finHabla = Date.now(); ok(true); return; }
@@ -196,7 +244,109 @@ function hablar(texto, lang, desde = 0, alAvanzar) {
     setTimeout(una, 60);
   });
 }
-function callar() { tokenHabla++; if (sintesis) sintesis.cancel(); hablando = false; finHabla = Date.now(); }
+
+// --- voces de Google
+const reproductor = new Audio();
+reproductor.preload = 'auto';
+let posGoogle = null;        // dónde quedó la última lectura (para «seguir» desde el mismo segundo)
+const audios = new Map();    // texto+voz -> Promise<URL del audio>
+async function sha(t) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t));
+  return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+async function traerAudio(texto, nombreVoz) {
+  let cache = null, clave = null;
+  try { cache = await caches.open('voces-1'); clave = new Request('/__voz/' + await sha(nombreVoz + '|' + texto)); const hay = await cache.match(clave); if (hay) return URL.createObjectURL(await hay.blob()); } catch { cache = null; }
+  let r;
+  try {
+    r = await fetch('/api/voz', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-editor': '1' }, body: JSON.stringify({ texto, voz: nombreVoz }) });
+  } catch { throw new Error('Sin conexión.'); }
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw Object.assign(new Error(d.error || `Error ${r.status}`), { status: r.status }); }
+  const blob = await r.blob();
+  try { if (cache) await cache.put(clave, new Response(blob, { headers: { 'content-type': 'audio/mpeg' } })); } catch { /* sin lugar: no importa */ }
+  return URL.createObjectURL(blob);
+}
+function audioDe(texto, nombreVoz) {
+  const k = nombreVoz + '|' + texto;
+  if (!audios.has(k)) {
+    if (audios.size > 400) { const [k0, p0] = audios.entries().next().value; audios.delete(k0); p0.then((u) => URL.revokeObjectURL(u), () => {}); }
+    audios.set(k, traerAudio(texto, nombreVoz).catch((e) => { audios.delete(k); throw e; }));
+  }
+  return audios.get(k);
+}
+// Pedir por adelantado el audio del próximo párrafo, para que no haya silencio entre uno y otro.
+function anticipar(u) {
+  if (!usarGoogle() || !u) return;
+  for (const f of fasesDe(u)) { const p = trozos(textoDe(u, f))[0]; if (p) audioDe(p, vozGoogle(f)).catch(() => {}); }
+}
+let avisoFalloGoogle = false;
+function hablarGoogle(texto, lang, { desde = 0, alAvanzar, reanudar = false } = {}) {
+  return new Promise((ok) => {
+    if (!texto) { ok(true); return; }
+    const mio = ++tokenHabla;
+    if (sintesis) sintesis.cancel();
+    reproductor.pause();
+    const partes = trozos(texto), nombre = vozGoogle(lang), clave = lang + '|' + texto;
+    let i = Math.min(desde, partes.length);
+    let desdeSeg = reanudar && posGoogle && posGoogle.clave === clave && posGoogle.i === i ? Math.max(0, posGoogle.t - 1.2) : 0;
+    const una = async () => {
+      if (mio !== tokenHabla) { ok(false); return; }
+      if (i >= partes.length) { hablando = false; finHabla = Date.now(); posGoogle = null; ok(true); return; }
+      alAvanzar && alAvanzar(i);
+      let src;
+      try {
+        src = await audioDe(partes[i], nombre);
+        if (i + 1 < partes.length) audioDe(partes[i + 1], nombre).catch(() => {});
+      } catch (e) {
+        if (mio !== tokenHabla) { ok(false); return; }
+        // Si Google falla, se sigue con la voz del navegador (y se avisa una sola vez).
+        googleCaidoHasta = Date.now() + 3 * 60 * 1000;
+        if (e.status === 503) vocesGoogle = null;
+        if (!avisoFalloGoogle) { avisoFalloGoogle = true; $('posicion').textContent = `Voces de Google no disponibles (${e.message}). Sigo con la voz del navegador.`; }
+        ok(await hablarNavegador(partes.slice(i).join(' '), lang));
+        return;
+      }
+      if (mio !== tokenHabla) { ok(false); return; }
+      const n = i;
+      reproductor.src = src;
+      reproductor.playbackRate = lang === 'en' ? E.aj.velEn : E.aj.velEs;
+      reproductor.onloadedmetadata = () => { if (desdeSeg) { try { reproductor.currentTime = desdeSeg; } catch { /* nada */ } desdeSeg = 0; } };
+      reproductor.ontimeupdate = () => { if (mio === tokenHabla && alAvanzar) posGoogle = { clave, i: n, t: reproductor.currentTime }; };
+      reproductor.onended = () => { if (mio !== tokenHabla) return; i++; una(); };
+      reproductor.onerror = () => { if (mio !== tokenHabla) return; i++; una(); };
+      hablando = true;
+      try { await reproductor.play(); }
+      catch (e) {
+        if (mio !== tokenHabla) { ok(false); return; }
+        hablando = false; finHabla = Date.now();
+        if (e.name === 'NotAllowedError') { estado('Tocá «Seguir» (o la barra espaciadora) para que empiece el audio.'); E.modo = 'pausa'; actualizarBotones(); ok(false); return; }
+        i++; una();
+      }
+    };
+    una();
+  });
+}
+// Safari solo deja reproducir audio si la primera vez fue con un toque o una tecla.
+function desbloquearAudio() {
+  document.removeEventListener('pointerdown', desbloquearAudio, true);
+  document.removeEventListener('keydown', desbloquearAudio, true);
+  if (reproductor.src) return;
+  const muestras = 800, b = new ArrayBuffer(44 + muestras * 2), d = new DataView(b);
+  const w = (o, s) => [...s].forEach((c, k) => d.setUint8(o + k, c.charCodeAt(0)));
+  w(0, 'RIFF'); d.setUint32(4, 36 + muestras * 2, true); w(8, 'WAVEfmt '); d.setUint32(16, 16, true); d.setUint16(20, 1, true); d.setUint16(22, 1, true);
+  d.setUint32(24, 8000, true); d.setUint32(28, 16000, true); d.setUint16(32, 2, true); d.setUint16(34, 16, true); w(36, 'data'); d.setUint32(40, muestras * 2, true);
+  reproductor.src = URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+  reproductor.play().catch(() => {});
+}
+document.addEventListener('pointerdown', desbloquearAudio, true);
+document.addEventListener('keydown', desbloquearAudio, true);
+
+function callar() {
+  tokenHabla++;
+  if (sintesis) sintesis.cancel();
+  reproductor.pause();
+  hablando = false; finHabla = Date.now();
+}
 
 // Avisos cortos (con voz) y sonidos
 const audio = window.AudioContext ? new AudioContext() : null;
@@ -229,7 +379,7 @@ const textoDe = (u, f) => (f === 'en' ? u.en : (u.leerEs || u.es.map((b) => b.t)
 const fasesDe = (u) => (E.aj.orden === 'es-en' ? ['es', 'en'] : E.aj.orden === 'es' ? ['es'] : E.aj.orden === 'en' ? ['en'] : ['en', 'es']).filter((f) => textoDe(u, f));
 
 // Lee la unidad actual (todas sus fases, o solo una) y, si corresponde, sigue con la próxima.
-async function leer({ solo = null, desdeFase = null, desdeFrase = 0 } = {}) {
+async function leer({ solo = null, desdeFase = null, desdeFrase = 0, reanudar = false } = {}) {
   const u = E.unidades[E.idx];
   if (!u) { E.modo = 'pausa'; await decir('Fin del capítulo. Decí «capítulo siguiente» para seguir.'); return; }
   E.modo = 'leyendo'; E.terminada = false; actualizarBotones(); pedirPantallaEncendida();
@@ -241,8 +391,10 @@ async function leer({ solo = null, desdeFase = null, desdeFrase = 0 } = {}) {
     if (E.modo !== 'leyendo' || E.idx !== idxInicio) return;     // se pausó entre un idioma y otro
     const f = fases[k];
     E.fase = f; marcarIdioma(f); estado(f === 'en' ? 'Leyendo el original…' : 'Leyendo la traducción…');
-    const termino = await hablar(textoDe(u, f), f, k === 0 || desdeFase === f ? desdeFrase : 0, (i) => { E.frase = i; });
-    desdeFrase = 0;
+    if (k === fases.length - 1) anticipar(E.unidades[E.idx + 1]);
+    const retomar = k === 0 || desdeFase === f;
+    const termino = await hablar(textoDe(u, f), f, { desde: retomar ? desdeFrase : 0, reanudar: retomar && reanudar, alAvanzar: (i) => { E.frase = i; } });
+    desdeFrase = 0; reanudar = false;
     if (!termino || E.modo !== 'leyendo' || E.idx !== idxInicio) return;   // pausado o movido
     if (k < fases.length - 1) await new Promise((r) => setTimeout(r, 450));
   }
@@ -265,7 +417,7 @@ function pausar() {
 }
 function seguir() {
   if (E.modo === 'leyendo') return;
-  if (E.modo === 'pausa' && E.fase) { leer({ desdeFase: E.fase, desdeFrase: E.frase }); return; }
+  if (E.modo === 'pausa' && E.fase) { leer({ desdeFase: E.fase, desdeFrase: E.frase, reanudar: true }); return; }
   if (E.modo === 'pausa' && E.terminada) { irA(E.idx + 1); return; }
   leer();
 }
@@ -300,11 +452,13 @@ function pintarDictado() {
 function puntuar(t) {
   let s = ' ' + t + ' ';
   const reemplazos = [
-    [/\s+punto y coma\s+/gi, '; '], [/\s+dos puntos\s+/gi, ': '], [/\s+punto y aparte\s+/gi, '.\n'], [/\s+nuevo párrafo\s+/gi, '\n'],
-    [/\s+punto y seguido\s+/gi, '. '], [/\s+punto\s+/gi, '. '], [/\s+coma\s+/gi, ', '], [/\s+abrir comillas\s+/gi, ' “'], [/\s+cerrar comillas\s+/gi, '” '],
-    [/\s+abrir signo de pregunta\s+/gi, ' ¿'], [/\s+cerrar signo de pregunta\s+/gi, '? '], [/\s+puntos suspensivos\s+/gi, '… '],
+    [/\s+abrir comillas\s+/gi, ' “'], [/\s+cerrar comillas\s+/gi, '” '], [/\s+abrir signo de pregunta\s+/gi, ' ¿'], [/\s+cerrar signo de pregunta\s+/gi, '? '],
+    [/\s+puntos suspensivos\s+/gi, '… '], [/\s+punto y coma\s+/gi, '; '], [/\s+dos puntos\s+/gi, ': '], [/\s+punto y aparte\s+/gi, '.\n'], [/\s+nuevo párrafo\s+/gi, '\n'],
+    [/\s+punto y seguido\s+/gi, '. '], [/\s+punto\s+/gi, '. '], [/\s+coma\s+/gi, ', '],
   ];
-  for (const [re, x] of reemplazos) s = s.replace(re, x);
+  // «falta una coma», «sacaría el punto»: ahí la palabra es el tema del comentario, no un signo.
+  const sustantivo = '(?<!\\b(?:un|una|el|la|los|las|otro|otra|ese|esa|este|esta|sin|con|del|de|falta|faltan|sobra|sobran|poner|pondría|pondria|agregar|agregaría|agregaria|sacar|sacaría|sacaria|quitar|quitaría|quitaria|cambiar|cambiaría|cambiaria|por|y|o|ni|qué|que|cuál|cual|primer|segundo|ningún|ningun|algún|algun|doble|dos|tres|unas|unos))';
+  for (const [re, x] of reemplazos) s = s.replace(new RegExp(sustantivo + re.source, re.flags), x);
   s = s.replace(/\s+([,.;:?”…])/g, '$1').replace(/“\s+/g, '“').replace(/[ \t]+/g, ' ').trim();
   s = s.replace(/(^|[.?!…]\s+|\n)(\p{Ll})/gu, (m, a, b) => a + b.toUpperCase());
   return s;
@@ -402,6 +556,7 @@ function alResultado(ev) {
   }
   const texto = (final || provisorio).trim();
   if (!texto) return;
+  $('oido').textContent = `Oí: «${texto}»`;
   if (ocupado) {
     // con la voz hablando: solo «pausa», y solo si es una palabra o dos
     if (texto.split(/\s+/).length <= 2 && PARAR.test(sinTildes(texto))) pausar();
@@ -412,23 +567,53 @@ function alResultado(ev) {
   }
 }
 
+// El navegador corta el reconocimiento cada tanto y se vuelve a encender solo. Si se corta enseguida
+// una y otra vez (el ícono del micrófono parpadea), algo lo impide: se apaga y se explica qué pasa.
+let micInicio = 0, micCortes = 0, micError = '', micOyo = false;
+const esSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+function problemaMic(err) {
+  if (err === 'not-allowed') return 'El navegador no tiene permiso para usar el micrófono. Tocá el candado junto a la dirección de la página y permitilo. En la Mac, revisá también Ajustes del Sistema, Privacidad y seguridad, Micrófono.';
+  if (err === 'service-not-allowed') return esSafari ? 'Safari necesita el Dictado activado: Ajustes del Sistema, Teclado, Dictado.' : 'Este navegador no ofrece reconocimiento de voz. Usá Google Chrome.';
+  if (err === 'audio-capture') return 'No encuentro el micrófono, o lo está usando otra aplicación (Zoom, Meet, WhatsApp…).';
+  if (err === 'network') return navigator.brave ? 'Brave no trae reconocimiento de voz. Usá Google Chrome o Safari.'
+    : 'El reconocimiento de voz no pudo conectarse con su servicio. Si usás Brave, Arc, Opera o Vivaldi, probá con Google Chrome o Safari. Si tenés VPN o un bloqueador, probá sin.';
+  return '';
+}
+function apagarMic(msg) {
+  activarMicrofono(false);
+  estado(msg); $('oido').textContent = '';
+  if (E.modo !== 'leyendo') decir(msg);
+}
 function activarMicrofono(si) {
   if (!Reconocimiento) { estado('Este navegador no reconoce la voz: usá Chrome, Edge o Safari. Mientras tanto, botones y teclado.'); return; }
   micActivo = si;
   $('b-microfono').setAttribute('aria-pressed', si ? 'true' : 'false');
   $('b-microfono').textContent = si ? '🎙 Micrófono encendido' : '🎙 Micrófono apagado';
   guardado.set('escucha-mic', si);
-  if (!si) { try { reconocimiento?.abort(); } catch { /* nada */ } return; }
+  clearTimeout(reiniciar);
+  if (!si) { $('oido').textContent = ''; try { reconocimiento?.abort(); } catch { /* nada */ } return; }
+  micCortes = 0; micError = '';
   if (!reconocimiento) {
     reconocimiento = new Reconocimiento();
     reconocimiento.lang = 'es-AR'; reconocimiento.continuous = true; reconocimiento.interimResults = true; reconocimiento.maxAlternatives = 1;
-    reconocimiento.onresult = alResultado;
+    reconocimiento.onstart = () => { micInicio = Date.now(); micOyo = false; $('oido').textContent = '🎙 Escuchando…'; };
+    reconocimiento.onresult = (ev) => { micOyo = true; micCortes = 0; alResultado(ev); };
     reconocimiento.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { activarMicrofono(false); estado('No hay permiso para usar el micrófono. Habilitalo en el navegador.'); }
+      micError = e.error;
+      if (e.error === 'language-not-supported' && reconocimiento.lang !== 'es-ES') { reconocimiento.lang = 'es-ES'; return; }
+      const msg = problemaMic(e.error);
+      if (msg) apagarMic(msg);
     };
-    reconocimiento.onend = () => {   // el navegador lo corta cada tanto: se vuelve a encender
+    reconocimiento.onend = () => {
       if (!micActivo) return;
-      clearTimeout(reiniciar); reiniciar = setTimeout(() => { try { reconocimiento.start(); } catch { /* ya estaba */ } }, 250);
+      const corto = !micOyo && Date.now() - micInicio < 2500;
+      micCortes = corto ? micCortes + 1 : 0;
+      if (micCortes >= 4) {
+        apagarMic(`El micrófono se corta solo${micError ? ` (${micError})` : ''}. ${problemaMic(micError) || 'Probá con Google Chrome, cerrá otras aplicaciones que usen el micrófono y volvé a encenderlo.'}`);
+        return;
+      }
+      $('oido').textContent = '';
+      reiniciar = setTimeout(() => { try { reconocimiento.start(); } catch { /* ya estaba */ } }, corto ? 500 * micCortes : 250);
     };
   }
   try { reconocimiento.start(); } catch { /* ya estaba encendido */ }
@@ -443,9 +628,14 @@ function velocidad(d) {
   E.aj.velEs = Math.min(1.6, Math.max(0.6, +(E.aj.velEs + d).toFixed(2)));
   E.aj.velEn = Math.min(1.6, Math.max(0.6, +(E.aj.velEn + d).toFixed(2)));
   guardarAjustes(); pintarAjustes();
+  if (usarGoogle() && E.modo === 'leyendo' && E.fase) {   // con las voces de Google se cambia sin cortar
+    reproductor.playbackRate = E.fase === 'en' ? E.aj.velEn : E.aj.velEs;
+    tono(d < 0 ? 520 : 780, 90); estado(d < 0 ? 'Más lento.' : 'Más rápido.');
+    return;
+  }
   const f = E.fase;
   callar();
-  decir(d < 0 ? 'Más lento.' : 'Más rápido.').then(() => { if (f) leer({ desdeFase: f, desdeFrase: E.frase }); else E.modo = 'pausa'; });
+  decir(d < 0 ? 'Más lento.' : 'Más rápido.').then(() => { if (f) leer({ desdeFase: f, desdeFrase: E.frase, reanudar: true }); else E.modo = 'pausa'; });
 }
 
 // ------------------------------------------------------------ pantalla encendida (celular)
@@ -465,6 +655,7 @@ async function iniciar() {
   const q = new URLSearchParams(location.search);
   const id = E.libros.some((l) => l.id === q.get('libro')) ? q.get('libro') : (guardado.get('escucha-libro') || E.libros[0]?.id);
   if (id) { sel.value = id; await abrirLibro(id, q.get('cap')); }
+  cargarVocesGoogle();
   if (Reconocimiento && guardado.get('escucha-mic', false)) activarMicrofono(true);
   if (!sintesis) estado('Este navegador no puede leer en voz alta. Probá con Chrome, Edge o Safari.');
 }
@@ -554,15 +745,18 @@ function pintarAjustes() {
 }
 function aplicarAjustes() {
   document.documentElement.style.setProperty('--letra', `${E.aj.letra}px`);
-  document.documentElement.dataset.tema = E.aj.tema;
+  document.documentElement.dataset.tema = E.aj.tema === 'auto' ? (matchMedia('(prefers-color-scheme: light)').matches ? 'claro' : 'oscuro') : E.aj.tema;
   $('caja-en').hidden = !E.aj.mostrarEn;
   pintarAjustes();
 }
 const enlazar = (id, clave, conv = (x) => x) => $(id).addEventListener('input', (e) => { E.aj[clave] = conv(e.target.type === 'checkbox' ? e.target.checked : e.target.value); guardarAjustes(); aplicarAjustes(); });
 enlazar('aj-orden', 'orden'); enlazar('aj-avance', 'avance'); enlazar('aj-vel-es', 'velEs', Number); enlazar('aj-vel-en', 'velEn', Number);
 enlazar('aj-letra', 'letra', Number); enlazar('aj-tema', 'tema'); enlazar('aj-mostrar-en', 'mostrarEn');
-$('aj-voz-es').onchange = (e) => { E.aj.vozEs = e.target.value; guardarAjustes(); };
-$('aj-voz-en').onchange = (e) => { E.aj.vozEn = e.target.value; guardarAjustes(); };
+matchMedia('(prefers-color-scheme: light)').addEventListener?.('change', () => { if (E.aj.tema === 'auto') aplicarAjustes(); });
+$('aj-voz-es').onchange = (e) => { E.aj[usarGoogle() ? 'gVozEs' : 'vozEs'] = e.target.value; guardarAjustes(); };
+$('aj-voz-en').onchange = (e) => { E.aj[usarGoogle() ? 'gVozEn' : 'vozEn'] = e.target.value; guardarAjustes(); };
+$('aj-motor').onchange = (e) => { callar(); if (E.modo === 'leyendo') { E.modo = 'pausa'; actualizarBotones(); } E.aj.motor = e.target.value; guardarAjustes(); llenarVoces(); };
+$('b-probar-voz').onclick = () => { callar(); if (E.modo === 'leyendo') { E.modo = 'pausa'; actualizarBotones(); } hablar('Hola. Así suena esta voz en castellano.', 'es').then((ok) => ok && hablar('And this is how the English voice sounds.', 'en')); };
 
 // ------------------------------------------------------------ arranque
 aplicarAjustes();
@@ -571,4 +765,4 @@ aplicarAjustes();
   catch { mostrarEntrada(); }
 })();
 
-window.__escucha = { E, armarUnidades, bloques, comando, puntuar, alResultado };   // para pruebas
+window.__escucha = { E, armarUnidades, bloques, comando, puntuar, alResultado, reproductor, trozos };   // para pruebas
