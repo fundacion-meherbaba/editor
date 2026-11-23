@@ -266,3 +266,6 @@ button.icono { padding: 3px 5px; line-height: 0; color: var(--muted); }
   .guardar { flex: 1 1 100%; justify-content: stretch; }
   .guardar input { max-width: none; }
 }
+
+button:disabled { opacity: .45; cursor: default; }
+button.icono-txt { white-space: nowrap; }

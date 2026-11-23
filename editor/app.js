@@ -151,6 +151,7 @@ async function abrirCapitulo(ruta, forzar = false) {
   estado.cap = { ruta, titulo: info?.titulo || ruta, sha: a.sha, original: a.texto };
   estado.viendoVersion = null;
   $('src').value = a.texto; $('src').readOnly = false; $('src').scrollTop = 0;
+  window.Deshacer?.reiniciar();
   $('nota').value = '';
   ocultarAviso();
   almacen.set('ultimo', { libro: estado.libro.id, cap: ruta });
@@ -208,6 +209,7 @@ function alEditar() {
   }, 500);
 }
 $('src').addEventListener('input', alEditar);
+window.Deshacer?.iniciar({ textarea: $('src'), deshacer: $('b-deshacer'), rehacer: $('b-rehacer') });
 
 window.addEventListener('beforeunload', (e) => { if (hayCambios()) { e.preventDefault(); e.returnValue = ''; } });
 
