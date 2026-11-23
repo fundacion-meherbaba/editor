@@ -241,3 +241,28 @@ button.icono { padding: 3px 5px; line-height: 0; color: var(--muted); }
 .or-par.sin { cursor: default; opacity: .75; }
 .or-falta { margin: 0; font-size: 12px; color: var(--muted); font-style: italic; }
 .or-aviso { color: var(--muted); font-size: 14px; line-height: 1.5; padding: 20px 6px; }
+
+/* Celular: la página se desplaza y cada panel ocupa casi toda la pantalla (antes quedaba una franja
+   chica debajo de la barra y las herramientas). Las barras pasan a una sola fila que se desliza. */
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { height: auto; min-height: 100vh; min-height: 100dvh; padding-bottom: env(safe-area-inset-bottom); }
+  .main { flex: none; height: calc(100vh - 64px); height: calc(100dvh - 64px); scroll-margin-top: 58px; }
+  .barra { gap: 6px 10px; }
+  .campo.crece { flex: 1 1 100%; }
+  .herramientas { flex-direction: column; align-items: stretch; flex-wrap: nowrap; gap: 6px; }
+  .toolbar { flex: none; flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding: 6px; scrollbar-width: none; }
+  .toolbar::-webkit-scrollbar { display: none; }
+  .toolbar .grp { flex-wrap: nowrap; flex: none; }
+  .toolbar button, .acciones-libro button { white-space: nowrap; flex: none; }
+  .acciones-libro { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .acciones-libro::-webkit-scrollbar { display: none; }
+  .vistas { position: sticky; top: 0; z-index: 6; background: var(--bg); padding: 4px 0; }
+  .vistas button { flex: 1; padding: 8px 10px; }
+  textarea, .marcas-int { font-size: 16px; }   /* menos de 16 px hace que Safari agrande la página al tocar */
+  .texto-envoltura { min-height: 0; }
+  textarea { min-height: 0; }
+  .original { padding-bottom: 50vh; }
+  .guardar { flex: 1 1 100%; justify-content: stretch; }
+  .guardar input { max-width: none; }
+}

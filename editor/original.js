@@ -4,7 +4,7 @@
 // lleva el cursor a su traducción.
 'use strict';
 (() => {
-  let ta, caja, api, ruta = null, datos = null, unidades = [], activo = -1, visible = false, numero = 1, tRe;
+  let nuevo = false, ta, caja, api, ruta = null, datos = null, unidades = [], activo = -1, visible = false, numero = 1, tRe;
 
   function iniciar(op) {
     ({ textarea: ta, contenedor: caja, api } = op);
@@ -17,7 +17,7 @@
   }
 
   async function abrir(r, n) {
-    ruta = r; numero = n; datos = null; unidades = []; activo = -1;
+    ruta = r; numero = n; datos = null; unidades = []; activo = -1; nuevo = true;
     if (visible) await cargar();
   }
 
@@ -51,6 +51,9 @@
         (u.es.length ? `<p class="or-es">${esc(recorte(es))}</p>` : '<p class="or-es or-falta">(sin traducción)</p>') +
         `<p class="or-en" lang="en">${esc(u.titulo ? u.en.replace(/^Chapter \d+\.\s*/, '') : u.en).replace(/\n/g, '<br>')}</p></div>`;
     }).join('');
+    // al abrir un capítulo el cursor queda al final del texto: se empieza por el principio
+    if (nuevo && document.activeElement !== ta) ta.setSelectionRange(0, 0);
+    nuevo = false;
     activo = -1; marcarCursor(true);
   }
 
