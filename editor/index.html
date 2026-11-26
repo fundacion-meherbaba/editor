@@ -35,6 +35,7 @@
     <div class="toolbar" id="toolbar" role="toolbar" aria-label="Etiquetas del libro"></div>
     <div class="acciones-libro">
       <button id="b-ficha">Ficha de estilos</button>
+      <button id="b-fotos" title="Ver y subir las fotos de este capítulo">Fotos</button>
       <button id="b-historial">Historial</button>
       <button id="b-cambios" title="Cambios sin aprobar">Cambios</button>
       <button id="b-exportar">PDF y EPUB</button>
@@ -100,6 +101,12 @@
   <div class="dlg-cab"><h2>Historial del capítulo</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
   <p class="ayuda">Cada vez que alguien guarda, queda una versión. Podés ver cualquiera y, si hace falta, volver a usarla.</p>
   <ol id="lista-historial" class="lista"></ol>
+</dialog>
+
+<dialog id="dlg-fotos" class="dlg ancho">
+  <div class="dlg-cab"><h2>Fotos del capítulo</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <p class="ayuda">Subí la foto de cada lugar: se achica sola y reemplaza a la gris. Desde el celular podés sacarla o elegirla de la galería.</p>
+  <ol id="lista-fotos" class="lista fotos"></ol>
 </dialog>
 
 <dialog id="dlg-exportar" class="dlg">

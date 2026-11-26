@@ -487,6 +487,62 @@ function aplicar(t) {
   }
 }
 
+// ------------------------------------------------------------ Fotos
+const versionFoto = {};   // ruta relativa -> marca para no ver la foto vieja guardada en el navegador
+const urlFoto = (rel) => {
+  const r = rel.replace(/^\.\//, '');
+  return `/api/raw?ruta=${encodeURIComponent(estado.libro.base + '/' + r)}${versionFoto[r] ? '&v=' + versionFoto[r] : ''}`;
+};
+const RE_FOTO = /^!\[([^\]]*)\]\(([^)\s]+)\)(\{[^}]*\})?[ \t]*$/gm;
+function fotosDelTexto() {
+  return [...$('src').value.matchAll(RE_FOTO)].map((m) => ({ pos: m.index, linea: m[0], epigrafe: m[1], ruta: m[2], marca: m[3] || '' }));
+}
+function dibujarFotos() {
+  const fotos = fotosDelTexto();
+  const ol = $('lista-fotos');
+  if (!fotos.length) { ol.innerHTML = '<li class="ayuda">Este capítulo no tiene fotos. Para agregar una, usá el botón de foto de la barra de etiquetas y después volvé acá.</li>'; return; }
+  ol.innerHTML = fotos.map((f, i) => {
+    const pendiente = /(^|\/)pendiente-/.test(f.ruta);
+    return `<li class="foto-fila${pendiente ? ' pendiente' : ''}" data-i="${i}">
+      <img src="${/^https?:/.test(f.ruta) ? esc(f.ruta) : esc(urlFoto(f.ruta))}" alt="" loading="lazy">
+      <div class="foto-datos"><div class="foto-epi">${esc(f.epigrafe || '(sin epígrafe)')}</div>
+        <div class="ayuda">${pendiente ? 'Falta la foto · ' : ''}${esc(f.ruta.replace(/^img\//, ''))}</div>
+        <label class="boton-archivo"><span>${pendiente ? 'Subir foto' : 'Cambiar foto'}</span><input type="file" accept="image/*" hidden></label>
+        <span class="foto-estado" role="status"></span></div></li>`;
+  }).join('');
+}
+// Achica la foto (lado mayor 1800 px, JPG) para que suba rápido y pese poco en el libro.
+async function achicarFoto(archivo) {
+  const bmp = await createImageBitmap(archivo, { imageOrientation: 'from-image' });
+  const k = Math.min(1, 1800 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+  const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.86));
+  const buf = new Uint8Array(await blob.arrayBuffer());
+  let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+$('b-fotos').onclick = () => { dibujarFotos(); $('dlg-fotos').showModal(); };
+$('lista-fotos').addEventListener('change', async (e) => {
+  const inp = e.target.closest('input[type=file]'); if (!inp || !inp.files[0]) return;
+  const fila = inp.closest('.foto-fila'); const est = fila.querySelector('.foto-estado');
+  if ($('src').readOnly) { est.textContent = 'Estás viendo una versión anterior.'; return; }
+  const f = fotosDelTexto()[+fila.dataset.i]; if (!f) return;
+  est.textContent = 'Subiendo…';
+  try {
+    const datos = await achicarFoto(inp.files[0]);
+    const base = f.ruta.replace(/^.*\//, '').replace(/\.[^.]+$/, '').replace(/^pendiente-/, 'foto-');
+    const r = await api('/api/foto', { metodo: 'POST', cuerpo: { libro: estado.libro.id, nombre: base, datos } });
+    versionFoto[r.ruta] = Date.now();
+    // se cambia solo la ruta de esa línea, para que Deshacer la devuelva
+    const actual = fotosDelTexto()[+fila.dataset.i];
+    const nueva = actual.linea.replace(`](${actual.ruta})`, `](${r.ruta})`);
+    reemplazar(actual.pos, actual.pos + actual.linea.length, nueva);
+    aviso('Foto subida.'); dibujarFotos(); renderizar();
+  } catch (err) { est.textContent = err.message || 'No se pudo subir la foto.'; }
+  inp.value = '';
+});
+
 // ------------------------------------------------------------ Vista previa
 // «letra» agranda o achica solo la tipografía (todo lo que está en pt); la página (en mm) no cambia,
 // así se ve cuántos caracteres entran por línea con una letra más chica o más grande.
@@ -601,7 +657,7 @@ function inline(s) {
 }
 function figura(linea) {
   const m = linea.match(/^!\[([^\]]*)\]\(([^)\s]+)\)(\{\.([\w-]+)\})?\s*$/); if (!m) return null;
-  const ruta = /^https?:/.test(m[2]) ? m[2] : `/api/raw?ruta=${encodeURIComponent(estado.libro.base + '/' + m[2].replace(/^\.\//, ''))}`;
+  const ruta = /^https?:/.test(m[2]) ? m[2] : urlFoto(m[2]);
   return `<figure class="${esc(m[4] || '')}"><img src="${esc(ruta)}" alt="${esc(m[1])}" onerror="this.outerHTML='<div class=falta-img>No encuentro la imagen ${esc(m[2])}</div>'">${m[1] ? `<figcaption>${inline(m[1])}</figcaption>` : ''}</figure>`;
 }
 function entradaGlosario(t) {

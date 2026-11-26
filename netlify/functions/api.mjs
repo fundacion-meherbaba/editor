@@ -320,6 +320,24 @@ const rutas = {
     return escribir(ruta, texto, sha, (mensaje || `Corrección en ${ruta.split('/').pop()}`), u, esCapitulo(ruta) ? BORRADOR() : RAMA());
   },
 
+  // Sube una foto a libros/<libro>/img/. Va directo a lo publicado (una foto no necesita aprobación:
+  // recién se usa cuando el capítulo que la nombra se aprueba) y reemplaza a la anterior del mismo nombre.
+  'POST /api/foto': async (req, u) => {
+    const { libro, nombre, datos } = await req.json().catch(() => ({}));
+    if (!/^[a-z0-9\-_]+$/i.test(libro || '') || !/^[a-z0-9\-_]{1,60}$/i.test(nombre || '') || typeof datos !== 'string') return error(400, 'Datos inválidos.');
+    if (datos.length > 5.5 * 1024 * 1024) return error(413, 'La foto es demasiado pesada.');
+    const bytes = Buffer.from(datos, 'base64');
+    if (!(bytes[0] === 0xff && bytes[1] === 0xd8)) return error(400, 'La foto tiene que ser un JPG.');
+    const ruta = `libros/${libro}/img/${nombre}.jpg`;
+    const previo = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}?ref=${RAMA()}`);
+    const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}`, { method: 'PUT', body: JSON.stringify({
+      message: `Foto ${nombre}.jpg de ${libro}\n\nSubida por ${u.nombre} <${u.email}> desde el editor.`,
+      content: bytes.toString('base64'), branch: RAMA(), author: { name: u.nombre, email: u.email },
+      ...(previo.ok ? { sha: previo.datos.sha } : {}) }) });
+    if (!r.ok) return error(502, 'GitHub no aceptó la foto.', { detalle: r.datos?.message });
+    return json({ ruta: `img/${nombre}.jpg` });
+  },
+
   // ---- revisión y aprobación
   'GET /api/pendientes': async (req) => {
     const id = new URL(req.url).searchParams.get('libro') || '';
