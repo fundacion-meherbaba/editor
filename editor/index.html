@@ -32,8 +32,10 @@
   </header>
 
   <div class="herramientas">
+    <button id="b-etiquetas" class="etiquetas-btn" aria-expanded="false" aria-controls="toolbar" title="Mostrar las etiquetas y estilos del libro">Etiquetas ▾</button>
     <div class="toolbar" id="toolbar" role="toolbar" aria-label="Etiquetas del libro"></div>
     <div class="acciones-libro">
+      <button id="b-compacto" class="alterna" aria-pressed="false" title="Modo reunión: deja más lugar al texto y a la página para compartir pantalla (Ctrl/⌘ + Mayús + M)">Modo reunión</button>
       <button id="b-ficha">Ficha de estilos</button>
       <button id="b-buscar" title="Buscar en todo el libro (Ctrl/⌘ + F)">Buscar</button>
       <button id="b-fotos" title="Ver y subir las fotos de este capítulo">Fotos</button>
@@ -63,6 +65,7 @@
           <button id="b-rehacer" class="icono-txt" disabled aria-label="Rehacer">↷</button>
           <label class="resaltar" title="Marca en el texto lo que se acaba de cambiar, para que se vea dónde se corrige"><input type="checkbox" id="resaltar" checked> Resaltar cambios</label>
           <button id="b-ircambio" hidden title="Ir al último cambio de otra persona"></button>
+          <button id="b-nota" title="Agregar una nota al pie en el cursor, o editar la nota si el cursor está sobre su número (Ctrl/⌘ + Alt + N)">Nota al pie</button>
           <button id="b-comentar" title="Comentar el texto seleccionado (Ctrl/⌘ + Alt + M)">Comentar</button>
           <button id="b-comentarios" aria-pressed="false" title="Ver los comentarios del capítulo">Comentarios<span class="n"></span></button>
         </div>
@@ -99,6 +102,7 @@
           <button id="pv-pagina" aria-pressed="true" title="Cómo queda la página impresa">Página del libro</button>
           <button id="pv-original" aria-pressed="false" title="El original en inglés, párrafo por párrafo, junto al lugar donde estás escribiendo">Original en inglés</button>
         </div>
+        <button id="b-sincro" aria-pressed="false" class="alterna" title="La página sigue al texto: marca el párrafo donde estás y acompaña el desplazamiento. Al tocar un párrafo de la página, el texto va hasta él.">Seguir en la página</button>
         <label class="zoom" title="Cambia solo el tamaño de la letra; la página siempre ocupa todo el ancho"><span>Letra</span>
           <select id="zoom"><option value="0.85">Chica</option><option value="1" selected>Como en el libro</option><option value="1.2">Grande</option><option value="1.4">Muy grande</option></select>
         </label>
@@ -122,6 +126,13 @@
   <input id="dic-filtro" type="search" placeholder="Buscar una palabra…" autocomplete="off">
   <p id="dic-cuenta" class="ayuda"></p>
   <ol id="dic-lista" class="lista dic"></ol>
+</dialog>
+
+<dialog id="dlg-nota" class="dlg">
+  <div class="dlg-cab"><h2 id="nota-titulo">Nota al pie</h2><button class="cerrar" data-cerrar aria-label="Cerrar">✕</button></div>
+  <p class="ayuda">Escribí el texto de la nota. Va al pie de la misma página en el PDF y se numera sola. Podés usar *cursiva* entre asteriscos.</p>
+  <textarea id="nota-texto" rows="6" aria-label="Texto de la nota al pie" class="nota-campo"></textarea>
+  <div class="dlg-pie"><button id="nota-quitar" class="peligro" hidden>Quitar la nota</button><span class="crece"></span><button data-cerrar>Cancelar</button><button id="nota-guardar" class="primario">Aceptar</button></div>
 </dialog>
 
 <dialog id="dlg-fotos" class="dlg ancho">

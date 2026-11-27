@@ -300,3 +300,42 @@ button.icono-txt { white-space: nowrap; }
 .marcas-cambios .marcas-int mark { text-decoration: none; border-radius: 3px; }
 .resaltar { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 #b-ircambio { background: #e3f6e9; border-color: #58c478; }
+
+.alterna { border: 1px solid var(--line); background: transparent; border-radius: 8px; padding: 4px 10px; font-size: 12px; color: var(--muted); }
+.alterna[aria-pressed="true"] { background: #fff3c4; border-color: #d9a400; color: #4a3600; font-weight: 600; }
+
+/* ---- Modo reunión: todo lo que no se usa a cada rato se esconde; el texto y la página ocupan casi toda la pantalla */
+.etiquetas-btn { display: none; }
+body.compacto .app { gap: 4px; max-width: none; }
+body.compacto .marca, body.compacto .barra .campo > span, body.compacto .usuario > span { display: none; }
+body.compacto .barra { gap: 6px; }
+body.compacto .herramientas { position: relative; flex-wrap: nowrap; align-items: center; gap: 6px; }
+body.compacto .etiquetas-btn { display: inline-block; }
+body.compacto .acciones-libro { margin-left: auto; }
+body.compacto .acciones-libro #b-ficha, body.compacto .acciones-libro #b-historial,
+body.compacto .acciones-libro #b-cambios, body.compacto .acciones-libro #b-exportar { display: none; }
+body.compacto .toolbar { display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 30; max-height: 60vh; overflow: auto; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+body.compacto .toolbar.abierta { display: flex; }
+body.compacto .panel-cab { padding: 4px 8px; gap: 6px; }
+body.compacto .guardar #nota, body.compacto .orto-control .orto-toggle, body.compacto #b-orto-opc, body.compacto .panel-cab .zoom span, body.compacto .resaltar { display: none; }
+body.compacto .pie-vista { display: none; }
+
+.nota-campo { width: 100%; box-sizing: border-box; font: inherit; font-size: 14px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); resize: vertical; }
+.dlg-pie { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.dlg-pie .crece { flex: 1; }
+.peligro { color: #b3261e; border-color: #b3261e; }
+body.compacto .ed .panel-cab { flex-wrap: nowrap; gap: 4px; }
+body.compacto .ed .panel-cab button { padding: 3px 7px; font-size: 11.5px; white-space: nowrap; }
+body.compacto .ed .com-botones, body.compacto .ed .orto-control, body.compacto .ed .guardar { display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; flex: none; }
+body.compacto .ed .estado { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.compacto .pv .panel-cab { flex-wrap: nowrap; gap: 4px; }
+body.compacto .pv .panel-cab button { padding: 3px 7px; font-size: 11.5px; white-space: nowrap; }
+@media (min-width: 861px) {
+  body.compacto .app { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto minmax(0, 1fr); align-content: stretch; }
+  body.compacto .barra { grid-column: 1; grid-row: 1; flex-wrap: nowrap; }
+  body.compacto .barra .campo.crece { min-width: 0; }
+  body.compacto .herramientas { grid-column: 2; grid-row: 1; }
+  body.compacto .main { grid-column: 1 / -1; grid-row: 2; }
+  body.compacto .toolbar { left: auto; right: 0; width: min(900px, 92vw); }
+  body.compacto #aviso, body.compacto #buscar { grid-column: 1 / -1; }
+}

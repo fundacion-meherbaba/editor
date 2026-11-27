@@ -601,6 +601,173 @@ function mostrarEnTexto(ini, fin, enfocar = true) {
   ta.setSelectionRange(ini, fin ?? ini);
   ta.scrollTop = Math.max(0, alturaTextoHasta(ini) - ta.clientHeight / 3);
 }
+// ------------------------------------------------------------ Notas al pie
+// En el texto cada nota es [^n] y su contenido va al final del capítulo como «[^n]: texto».
+// Acá se crean, editan y quitan sin tocar esas marcas a mano.
+const Notas = (() => {
+  const dlg = $('dlg-nota'), campo = $('nota-texto');
+  let actual = null;                    // { id, pos } ; id null = nota nueva
+  const reRef = /\[\^([^\]\s]+)\](?!:)/g;
+  const defDe = (v, id) => {
+    const m = new RegExp(`^\\[\\^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]:[ \\t]*(.*)$`, 'm').exec(v);
+    return m ? { ini: m.index, fin: m.index + m[0].length, txt: m[1], txtIni: m.index + m[0].length - m[1].length } : null;
+  };
+  const refEnCursor = (v, pos) => { reRef.lastIndex = 0; let m; while ((m = reRef.exec(v))) if (pos >= m.index && pos <= m.index + m[0].length) return m[1]; return null; };
+  const abrir = (id, pos) => {
+    if ($('src').readOnly) { aviso('Estás viendo una versión anterior.'); return; }
+    const v = $('src').value; const d = id ? defDe(v, id) : null;
+    actual = { id, pos };
+    $('nota-titulo').textContent = id ? 'Editar nota al pie' : 'Nueva nota al pie';
+    $('nota-quitar').hidden = !id;
+    campo.value = d ? d.txt : '';
+    dlg.showModal(); campo.focus();
+  };
+  const desdeCursor = () => {
+    const ta = $('src'); const id = refEnCursor(ta.value, ta.selectionStart);
+    abrir(id, ta.selectionEnd);
+  };
+  const guardar = () => {
+    const txt = campo.value.replace(/\s*\n\s*/g, ' ').trim();
+    if (!txt) { aviso('La nota está vacía: escribí el texto o usá «Quitar la nota».'); return; }
+    const ta = $('src'); let v = ta.value;
+    if (actual.id) {
+      const d = defDe(v, actual.id);
+      if (d) reemplazar(d.txtIni, d.fin, txt); else reemplazar(v.length, v.length, `${v.endsWith('\n') ? '' : '\n'}\n[^${actual.id}]: ${txt}`);
+    } else {
+      const usados = [...v.matchAll(/\[\^(\d+)\]/g)].map((m) => +m[1]);
+      const id = String((usados.length ? Math.max(...usados) : 0) + 1);
+      // primero la definición (más abajo en el texto) y después la marca, así las posiciones no se corren
+      const defs = [...v.matchAll(/^\[\^[^\]\s]+\]:.*$/gm)];
+      if (defs.length) { const u = defs[defs.length - 1]; const f = u.index + u[0].length; reemplazar(f, f, `\n[^${id}]: ${txt}`); }
+      else reemplazar(v.length, v.length, `${v.endsWith('\n') ? '' : '\n'}\n[^${id}]: ${txt}`);
+      reemplazar(actual.pos, actual.pos, `[^${id}]`, actual.pos + id.length + 3, actual.pos + id.length + 3);
+    }
+    dlg.close();
+  };
+  const quitar = () => {
+    const ta = $('src'); const id = actual.id; if (!id) return;
+    const esc = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    let v = ta.value; const d = defDe(v, id);
+    if (d) { const fin = v[d.fin] === '\n' ? d.fin + 1 : d.fin; reemplazar(d.ini, fin, ''); v = ta.value; }
+    const r = new RegExp(`\\[\\^${esc}\\](?!:)`, 'g'); const lugares = [...v.matchAll(r)].reverse();
+    lugares.forEach((m) => reemplazar(m.index, m.index + m[0].length, ''));
+    dlg.close();
+  };
+  $('b-nota').onclick = desdeCursor;
+  $('nota-guardar').onclick = guardar; $('nota-quitar').onclick = quitar;
+  campo.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); guardar(); } });
+  document.addEventListener('keydown', (e) => { if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'n') { e.preventDefault(); desdeCursor(); } });
+  return {
+    conectar(d) {
+      if (!d || d.__notas) return; d.__notas = true;
+      d.addEventListener('click', (e) => {
+        const n = e.target.closest?.('[data-nota]'); if (!n) return;
+        e.stopPropagation(); abrir(n.dataset.nota, 0);
+      }, true);
+    },
+  };
+})();
+
+// ------------------------------------------------------------ Modo reunión (pantalla compartida)
+const Compacto = (() => {
+  const b = $('b-compacto'), eb = $('b-etiquetas'), tb = $('toolbar');
+  const cerrarEtiquetas = () => { tb.classList.remove('abierta'); eb.setAttribute('aria-expanded', 'false'); };
+  const poner = (v) => {
+    document.body.classList.toggle('compacto', v); b.setAttribute('aria-pressed', String(v));
+    almacen.set('compacto', v); cerrarEtiquetas();
+    setTimeout(() => { try { ajustarHoja(); } catch { /* aún sin libro */ } }, 50);
+  };
+  b.onclick = () => poner(!document.body.classList.contains('compacto'));
+  eb.onclick = (e) => { e.stopPropagation(); const a = !tb.classList.contains('abierta'); tb.classList.toggle('abierta', a); eb.setAttribute('aria-expanded', String(a)); };
+  tb.addEventListener('click', (e) => { if (e.target.closest('button')) setTimeout(() => { cerrarEtiquetas(); $('src').focus({ preventScroll: true }); }, 0); });
+  document.addEventListener('click', (e) => { if (!tb.contains(e.target) && e.target !== eb) cerrarEtiquetas(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') cerrarEtiquetas();
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'm') { e.preventDefault(); b.click(); }
+  });
+  if (almacen.get('compacto')) poner(true);
+})();
+
+// ------------------------------------------------------------ Sincronizar texto y página
+// Con «Seguir en la página» activo: el párrafo donde está el cursor se marca y se muestra en la página,
+// la página acompaña el desplazamiento del texto, y tocar un párrafo de la página lleva el texto hasta él.
+const Sincro = (() => {
+  let activo = !!almacen.get('sincro');
+  let silencio = 0;                       // evita que un movimiento provocado por nosotros provoque otro
+  let marcado = null, pendiente = false;
+  const ta = () => $('src');
+  const doc = () => $('vista').contentDocument;
+  const lineaDe = (pos) => { let n = 0; const v = ta().value; for (let i = v.indexOf('\n'); i !== -1 && i < pos; i = v.indexOf('\n', i + 1)) n++; return n; };
+  const posDeLinea = (n) => { const v = ta().value; let p = 0; for (let k = 0; k < n; k++) { const i = v.indexOf('\n', p); if (i === -1) return v.length; p = i + 1; } return p; };
+  const bloqueDe = (linea) => {
+    const d = doc(); if (!d) return null;
+    let mejor = null, ml = -1;
+    d.querySelectorAll('#c [data-l]').forEach((el) => { const l = +el.dataset.l; if (l <= linea && l >= ml) { mejor = el; ml = l; } });
+    return mejor;
+  };
+  const marcar = (el) => {
+    if (marcado && marcado !== el) marcado.classList.remove('sincro-activo');
+    marcado = el; if (el) el.classList.add('sincro-activo');
+  };
+  const llevarPagina = (el, arriba) => {
+    const d = doc(); if (!d || !el) return;
+    const w = d.defaultView, r = el.getBoundingClientRect(), alto = w.innerHeight;
+    const quiero = arriba ? 24 : alto / 3;
+    silencio = Date.now() + 250;
+    w.scrollTo({ top: Math.max(0, w.scrollY + r.top - quiero), behavior: 'auto' });
+  };
+  const alCursor = () => {
+    if (!activo) return;
+    const el = bloqueDe(lineaDe(ta().selectionStart)); marcar(el);
+    const d = doc(); if (!d || !el) return;
+    const r = el.getBoundingClientRect(), alto = d.defaultView.innerHeight;
+    if (r.top < 0 || r.bottom > alto) llevarPagina(el, false);   // solo si no se ve
+  };
+  const alDesplazar = () => {
+    if (!activo || Date.now() < silencio || pendiente) return;
+    pendiente = true;
+    requestAnimationFrame(() => {
+      pendiente = false;
+      const t = ta(); let lo = 0, hi = t.value.length;
+      for (let k = 0; k < 18 && lo < hi; k++) { const mid = (lo + hi) >> 1; if (alturaTextoHasta(mid) < t.scrollTop + 4) lo = mid + 1; else hi = mid; }
+      const el = bloqueDe(lineaDe(lo)); if (el) llevarPagina(el, true);
+    });
+  };
+  const alTocarPagina = (e) => {
+    if (!activo) return;
+    const el = e.target.closest?.('[data-l]'); if (!el) return;
+    const pos = posDeLinea(+el.dataset.l);
+    silencio = Date.now() + 250;
+    marcar(el);
+    mostrarEnTexto(pos, pos, true);
+  };
+  const conectarPagina = () => {
+    const d = doc(); if (!d || d.__sincro) return;
+    d.__sincro = true; d.addEventListener('click', alTocarPagina);
+  };
+  const poner = (v) => {
+    activo = v; almacen.set('sincro', v);
+    const b = $('b-sincro'); if (b) b.setAttribute('aria-pressed', String(v));
+    if (v) { conectarPagina(); alCursor(); } else marcar(null);
+  };
+  const iniciar = () => {
+    const b = $('b-sincro'); if (!b) return;
+    b.setAttribute('aria-pressed', String(activo));
+    b.onclick = () => poner(!activo);
+    const t = ta();
+    ['click', 'keyup', 'focus'].forEach((ev) => t.addEventListener(ev, () => setTimeout(alCursor, 0)));
+    t.addEventListener('scroll', alDesplazar);
+  };
+  return {
+    iniciar,
+    despuesDeRenderizar() {
+      marcado = null; conectarPagina(); Notas.conectar(doc());
+      if (activo) { const el = bloqueDe(lineaDe(ta().selectionStart)); marcar(el); }
+    },
+  };
+})();
+Sincro.iniciar();
+
 window.Buscar?.iniciar({
   textarea: $('src'), api, libro: () => estado.libro, capActual: () => estado.cap?.ruta,
   abrirCapitulo: (ruta) => { $('sel-cap').value = ruta; return abrirCapitulo(ruta); },
@@ -687,6 +854,7 @@ body{margin:0;padding:16px 12px 60px}
   padding:var(--pagina-margen-superior) var(--pagina-margen-exterior) var(--pagina-margen-inferior) var(--pagina-margen-interior);
   box-shadow:0 1px 3px rgba(0,0,0,.18)}
 .encabezado{font-size:var(--tipografia-pie,8pt);text-align:right;color:#555;margin-bottom:10mm}
+.sincro-activo{background:rgba(255,214,0,.28);outline:2px solid rgba(230,170,0,.55);outline-offset:2px;border-radius:2px;transition:background .15s}
 .nota-interna{display:block!important;font-family:system-ui,sans-serif;font-size:12px;line-height:1.45;background:#fff6e5;border:1px dashed #b7791f;padding:6px 8px;margin:8px 0}
 .nota-interna p{text-indent:0;text-align:left}
 .nota-interna::before{content:"Nota interna · no se imprime";display:block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#8a5a12;margin-bottom:3px}
@@ -697,7 +865,8 @@ body{margin:0;padding:16px 12px 60px}
 .marca-anio::before{content:"Desde acá, el pie de página dice: "}
 .pie-vista{font:11px system-ui,sans-serif;color:#777;text-align:center;margin-top:16px}
 .ref-nota{font-size:.7em;line-height:0}
-.notas-pie{margin-top:2em;padding-top:.5em;border-top:.4pt solid #000;width:100%;font-size:8pt;line-height:10.2pt}
+.ref-nota,.notas-pie p{cursor:pointer}
+.notas-pie{margin:.8em 0 1.2em;padding-top:.4em;border-top:.4pt solid #000;width:40%;font-size:8pt;line-height:10.2pt}
 .notas-pie p{text-indent:0;margin:0 0 .3em}`;
 
 function prepararVista() {
@@ -791,59 +960,77 @@ const CLASES_CONOCIDAS = () => new Set((estado.libro.ficha.etiquetas || []).map(
 const CLASES_CON_RENGLONES = () => new Set((estado.libro.ficha.etiquetas || []).filter((e) => /^(si|sí|true)$/i.test(String(e.lineas ?? '')))
   .map((e) => tipoDeMarca(e.marca)).filter((t) => t?.tipo === 'bloque').map((t) => t.clase));
 
+// Pone en la primera etiqueta el número de línea del Markdown de donde sale (data-l): con eso la vista
+// previa y el texto saben cuál es el párrafo del otro.
+const marcarLinea = (html, n) => (n == null ? html : html.replace(/^<(\w+)/, `<$1 data-l="${n}"`));
+
 function aHtml(texto) {
   const notas = {}; const orden = [];
   texto = texto.replace(/^\[\^(\d+)\]:\s*(.*)$/gm, (m, id, t) => { notas[id] = t; return ''; });
   const L = texto.replace(/\r/g, '').split('\n');
   const conocidas = CLASES_CONOCIDAS();
   const renglones = CLASES_CON_RENGLONES();
-  let h = ''; let buf = []; let lista = []; let cita = [];
-  const parrafos = (lineas, clase) => lineas.join('\n').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).map((p) => {
-    if (clase === 'contacto') return p.split('\n').map((x) => `<p>${inline(x)}</p>`).join('');
-    if (renglones.has(clase)) return `<p>${p.split('\n').map((x) => inline(x.trim())).join('<br>')}</p>`;
-    const f = figura(p); if (f) return f;
-    const plano = p.replace(/\n/g, ' ');
-    return `<p>${clase === 'entrada' ? entradaGlosario(plano) : inline(plano)}</p>`;
-  }).join('');
-  const vaciarP = () => { if (buf.length) { h += parrafos(buf); buf = []; } };
-  const vaciarL = () => { if (lista.length) { h += `<ol start="${lista[0].n}">${lista.map((x) => `<li>${inline(x.t)}</li>`).join('')}</ol>`; lista = []; } };
-  const vaciarC = () => { if (cita.length) { h += `<blockquote>${parrafos(cita)}</blockquote>`; cita = []; } };
+  let h = ''; let buf = []; let lista = []; let cita = []; let bufIni = 0, citaIni = 0;
+  // «ini» es la línea del texto donde empieza lineas[0]
+  const parrafos = (lineas, clase, ini = 0) => {
+    const grupos = []; let g = null;
+    lineas.forEach((x, k) => { if (!x.trim()) { g = null; return; } if (!g) { g = { ini: ini + k, ls: [] }; grupos.push(g); } g.ls.push(x); });
+    return grupos.map(({ ini: n, ls }) => {
+      const p = ls.join('\n').trim();
+      if (clase === 'contacto') return marcarLinea(p.split('\n').map((x) => `<p>${inline(x)}</p>`).join(''), n);
+      if (renglones.has(clase)) return marcarLinea(`<p>${p.split('\n').map((x) => inline(x.trim())).join('<br>')}</p>`, n);
+      const f = figura(p); if (f) return marcarLinea(f, n);
+      const plano = p.replace(/\n/g, ' ');
+      return marcarLinea(`<p>${clase === 'entrada' ? entradaGlosario(plano) : inline(plano)}</p>`, n);
+    }).join('');
+  };
+  const vaciarP = () => { if (buf.length) { h += parrafos(buf, undefined, bufIni); buf = []; } };
+  const vaciarL = () => { if (lista.length) { h += marcarLinea(`<ol start="${lista[0].n}">${lista.map((x) => marcarLinea(`<li>${inline(x.t)}</li>`, x.l)).join('')}</ol>`, lista[0].l); lista = []; } };
+  const vaciarC = () => { if (cita.length) { h += marcarLinea(`<blockquote>${parrafos(cita, undefined, citaIni)}</blockquote>`, citaIni); cita = []; } };
   const vaciar = () => { vaciarP(); vaciarL(); vaciarC(); };
+  // Las notas van justo debajo del bloque donde se citan (como al pie de la página), numeradas en orden.
+  let marca = 0;
+  const volcar = () => {
+    let nuevo = h.slice(marca); const aqui = [];
+    nuevo = nuevo.replace(/\[\^(\d+)\]/g, (m, id) => { if (!orden.includes(id)) orden.push(id); if (!aqui.includes(id)) aqui.push(id); return `<sup class="ref-nota" data-nota="${esc(id)}">${orden.indexOf(id) + 1}</sup>`; });
+    if (aqui.length) nuevo += `<div class="notas-pie">${aqui.map((id) => `<p data-nota="${esc(id)}"><span>${orden.indexOf(id) + 1}.</span> ${inline(notas[id] || '(falta el texto de esta nota)')}</p>`).join('')}</div>`;
+    h = h.slice(0, marca) + nuevo; marca = h.length;
+  };
   for (let i = 0; i < L.length; i++) {
+    volcar();
     const l = L[i];
     const div = l.match(/^:::\s*([\p{L}\w-]+)\s*$/u);
     if (div) {
-      vaciar(); const clase = div[1]; const dentro = []; i++;
+      vaciar(); const clase = div[1]; const dentro = []; const lineaDiv = i; i++; const iniDentro = i;
       while (i < L.length && !/^:::\s*$/.test(L[i])) { dentro.push(L[i]); i++; }
       if (clase === 'año' || clase === 'anio') {
-        h += `<div class="marca-anio">año ${esc(dentro.join(' ').trim())}</div>`; continue;
+        h += marcarLinea(`<div class="marca-anio">año ${esc(dentro.join(' ').trim())}</div>`, lineaDiv); continue;
       }
       const ok = conocidas.has(clase) || clase === 'nota-interna';
-      h += `<div class="${esc(clase)}${ok ? '' : ' desconocida'}" data-clase="${esc(clase)}">${parrafos(dentro, clase)}</div>`;
+      h += marcarLinea(`<div class="${esc(clase)}${ok ? '' : ' desconocida'}" data-clase="${esc(clase)}">${parrafos(dentro, clase, iniDentro)}</div>`, lineaDiv);
       continue;
     }
     const q = l.match(/^>\s?(.*)$/);
-    if (q) { vaciarP(); vaciarL(); cita.push(q[1]); continue; }
+    if (q) { vaciarP(); vaciarL(); if (!cita.length) citaIni = i; cita.push(q[1]); continue; }
     if (cita.length && l.trim()) { cita.push(l); continue; }   // continuación perezosa de la cita
-    if (/^\s*(\*\s*){3,}$|^\s*(-\s*){3,}$/.test(l)) { vaciar(); h += '<hr>'; continue; }
+    if (/^\s*(\*\s*){3,}$|^\s*(-\s*){3,}$/.test(l)) { vaciar(); h += marcarLinea('<hr>', i); continue; }
     const t = l.match(/^(#{1,4})\s+(.*?)\s*(?:\{([^}]*)\})?\s*$/);
     if (t) {
       vaciar(); const n = t[1].length, tx = t[2];
       const clases = (t[3] || '').split(/\s+/).filter((c) => c.startsWith('.')).map((c) => c.slice(1)).join(' ');
       if (n === 2) {
         const p = tx.match(/^(Parte\s+[IVXLC]+)\s*:?\s*(.*)$/i);
-        h += p ? `<h2 class="parte"><span>${esc(p[1])}</span>${p[2] ? `<span>${inline(p[2])}</span>` : ''}</h2>` : `<h2 class="seccion">${inline(tx)}</h2>`;
-      } else h += `<h${n}${clases ? ` class="${esc(clases)}"` : ''}>${inline(tx)}</h${n}>`;
+        h += marcarLinea(p ? `<h2 class="parte"><span>${esc(p[1])}</span>${p[2] ? `<span>${inline(p[2])}</span>` : ''}</h2>` : `<h2 class="seccion">${inline(tx)}</h2>`, i);
+      } else h += marcarLinea(`<h${n}${clases ? ` class="${esc(clases)}"` : ''}>${inline(tx)}</h${n}>`, i);
       continue;
     }
     const li = l.match(/^(\d{1,3})\.\s+(.*)$/);
-    if (li) { vaciarP(); vaciarC(); lista.push({ n: +li[1], t: li[2] }); continue; }
+    if (li) { vaciarP(); vaciarC(); lista.push({ n: +li[1], t: li[2], l: i }); continue; }
     if (!l.trim()) { vaciar(); continue; }
-    vaciarL(); vaciarC(); buf.push(l);
+    vaciarL(); vaciarC(); if (!buf.length) bufIni = i; buf.push(l);
   }
   vaciar();
-  h = h.replace(/\[\^(\d+)\]/g, (m, id) => { if (!orden.includes(id)) orden.push(id); return `<sup class="ref-nota">${orden.indexOf(id) + 1}</sup>`; });
-  if (orden.length) h += `<div class="notas-pie">${orden.map((id, k) => `<p><span>${k + 1}.</span> ${inline(notas[id] || '(falta el texto de esta nota)')}</p>`).join('')}</div>`;
+  volcar();
   return h;
 }
 
@@ -856,6 +1043,7 @@ function renderizar() {
   const texto = $('src').value;
   c.innerHTML = aHtml(texto);
   d.getElementById('enc').textContent = (texto.match(/^#\s+(.+)$/m)?.[1] || '').replace(/\s*\{[^}]*\}\s*$/, '');
+  Sincro.despuesDeRenderizar();
 }
 
 // ------------------------------------------------------------ Vista en pantallas chicas
