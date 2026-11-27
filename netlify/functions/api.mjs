@@ -303,6 +303,38 @@ const rutas = {
     });
   },
 
+  // El texto de todos los capítulos de un libro (la versión de trabajo), para buscar en todo el libro.
+  'GET /api/texto-libro': async (req) => {
+    const id = new URL(req.url).searchParams.get('id') || '';
+    if (!/^[a-z0-9\-_]+$/i.test(id)) return error(400, 'Libro inválido.');
+    await asegurarBorrador();
+    const base = `libros/${id}/capitulos`;
+    const [pub, bor] = await Promise.all([arbol(base), arbol(base, BORRADOR())]);
+    const m = new Map();
+    for (const e of [...pub, ...bor]) if (e.type === 'blob' && e.name.endsWith('.md')) m.set(e.path, { ruta: e.path, sha: e.oid, texto: e.object?.text || '' });
+    return json([...m.values()].sort((a, b) => a.ruta.localeCompare(b.ruta)));
+  },
+
+  // ¿Cambió el capítulo desde la última vez que se miró? Pregunta barata (usa ETag: si no cambió, GitHub
+  // contesta 304 y no cuenta contra el límite de consultas). La usa el editor cada pocos segundos.
+  'GET /api/version': async (req) => {
+    const q = new URL(req.url).searchParams;
+    const ruta = q.get('ruta'); const etag = q.get('etag') || '';
+    if (!esCapitulo(ruta)) return error(400, 'Capítulo inválido.');
+    for (const rama of [BORRADOR(), RAMA()]) {
+      const r = await gh(`/repos/${REPO()}/commits?path=${encodeURIComponent(ruta)}&sha=${encodeURIComponent(rama)}&per_page=1`,
+        { headers: etag && rama === BORRADOR() ? { 'if-none-match': etag } : {} });
+      if (r.status === 304) return json({ cambio: false });
+      if (!r.ok) return error(502, 'No pude consultar GitHub.');
+      const lista = await r.json();
+      if (lista[0]) {
+        const c = lista[0];
+        return json({ cambio: true, commit: c.sha, autor: c.commit?.author?.name, email: c.commit?.author?.email, fecha: c.commit?.author?.date, etag: rama === BORRADOR() ? r.headers.get('etag') : null, rama });
+      }
+    }
+    return json({ cambio: true, commit: null });
+  },
+
   'GET /api/archivo': async (req) => {
     const q = new URL(req.url).searchParams;
     const ruta = q.get('ruta');
@@ -401,6 +433,28 @@ const rutas = {
         message: `Diccionario: agrega «${w}»\n\nAgregada por ${u.nombre} <${u.email}> desde el editor.`,
         content: Buffer.from(texto, 'utf8').toString('base64'), branch: RAMA(),
         author: { name: u.nombre, email: u.email }, ...(a?.sha ? { sha: a.sha } : {}),
+      }) });
+      if (r.ok) return json({ ok: true });
+      if (r.status !== 409 && r.status !== 422) return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });
+    }
+    return error(409, 'Varias personas están editando el diccionario a la vez. Probá de nuevo.');
+  },
+
+  // Quita una palabra del diccionario compartido (por ejemplo, una que se agregó mal escrita).
+  'POST /api/diccionario-quitar': async (req, u) => {
+    const { ruta, palabra } = await req.json().catch(() => ({}));
+    const w = String(palabra || '').trim();
+    if (!rutaEscribible(ruta) || !ruta.endsWith('.txt') || !w) return error(400, 'Datos inválidos.');
+    for (let intento = 0; intento < 4; intento++) {
+      const a = await archivo(ruta);
+      if (!a) return error(404, 'No encontré el diccionario.');
+      const lineas = a.texto.split('\n');
+      if (!lineas.some((l) => l.trim() === w)) return json({ ok: true, yaNoEstaba: true });
+      const texto = lineas.filter((l) => l.trim() !== w).join('\n').replace(/\n*$/, '\n');
+      const r = await ghJson(`/repos/${REPO()}/contents/${codificar(ruta)}`, { method: 'PUT', body: JSON.stringify({
+        message: `Diccionario: quita «${w}»\n\nQuitada por ${u.nombre} <${u.email}> desde el editor.`,
+        content: Buffer.from(texto, 'utf8').toString('base64'), branch: RAMA(),
+        author: { name: u.nombre, email: u.email }, sha: a.sha,
       }) });
       if (r.ok) return json({ ok: true });
       if (r.status !== 409 && r.status !== 422) return error(502, 'GitHub no aceptó el cambio.', { detalle: r.datos?.message });

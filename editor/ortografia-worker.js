@@ -190,7 +190,7 @@ self.onmessage = async (e) => {
   const d = e.data;
   try {
     await cargar();
-    if (d.tipo === 'diccionario') { agregar(d.palabras); self.postMessage({ tipo: 'listo' }); }
+    if (d.tipo === 'diccionario') { extra.clear(); extraMinus.clear(); agregar(d.palabras); self.postMessage({ tipo: 'listo' }); }
     else if (d.tipo === 'agregar') { agregar(d.palabras); }
     else if (d.tipo === 'revisar') {
       const t0 = Date.now();

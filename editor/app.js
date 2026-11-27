@@ -76,6 +76,9 @@ $('b-salir').onclick = async () => {
   estado.usuario = null; mostrarEntrada();
 };
 
+// ------------------------------------------------------------ Edición en conjunto (estado)
+const SYNC = { guardando: false, tAuto: 0, tSondeo: 0, etag: '', fallo: false, reintentar: false };
+
 // ------------------------------------------------------------ Arranque
 async function iniciar() {
   $('pantalla-entrada').hidden = true; $('app').hidden = false;
@@ -98,6 +101,7 @@ async function iniciar() {
 
 // ------------------------------------------------------------ Libro y ficha
 async function abrirLibro(id, capPreferido) {
+  if (hayCambios() && !estado.viendoVersion) await guardar(null, { auto: true });
   if (hayCambios() && !confirm('Tenés cambios sin guardar en este capítulo. ¿Cambiar de libro igual? (quedan guardados en este navegador)')) {
     $('sel-libro').value = estado.libro?.id; return;
   }
@@ -139,6 +143,10 @@ const claveBorrador = (ruta) => `borrador:${ruta}`;
 const hayCambios = () => !!estado.cap && $('src').value !== estado.cap.original;
 
 async function abrirCapitulo(ruta, forzar = false) {
+  if (!forzar && hayCambios() && !estado.viendoVersion) {
+    for (let k = 0; k < 50 && SYNC.guardando; k++) await new Promise((ok) => setTimeout(ok, 100));
+    await guardar(null, { auto: true });
+  }
   if (!forzar && hayCambios() && !confirm('Tenés cambios sin guardar. ¿Cambiar de capítulo igual? (quedan guardados en este navegador)')) {
     $('sel-cap').value = estado.cap.ruta; return;
   }
@@ -148,10 +156,11 @@ async function abrirCapitulo(ruta, forzar = false) {
   try { a = await api(`/api/archivo?ruta=${encodeURIComponent(ruta)}`); }
   catch (e) { aviso(e.message, 5000); return; }
   const info = estado.libro.capitulos.find((c) => c.ruta === ruta);
-  estado.cap = { ruta, titulo: info?.titulo || ruta, sha: a.sha, original: a.texto };
-  estado.viendoVersion = null;
+  estado.cap = { ruta, titulo: info?.titulo || ruta, sha: a.sha, original: a.texto, commit: null };
+  estado.viendoVersion = null; SYNC.etag = ''; SYNC.fallo = false;
+  clearTimeout(SYNC.tAuto);
   $('src').value = a.texto; $('src').readOnly = false; $('src').scrollTop = 0;
-  window.Deshacer?.reiniciar();
+  window.Deshacer?.reiniciar(); window.Colaborar?.reiniciarResaltado(); $('b-ircambio').hidden = true;
   $('nota').value = '';
   ocultarAviso();
   almacen.set('ultimo', { libro: estado.libro.id, cap: ruta });
@@ -175,8 +184,9 @@ $('sel-cap').onchange = (e) => abrirCapitulo(e.target.value);
 function actualizarEstado() {
   const el = $('estado');
   if (estado.viendoVersion) { el.textContent = 'Viendo una versión anterior'; el.className = 'estado cambios'; return; }
+  if (SYNC.guardando) { el.textContent = 'Guardando…'; el.className = 'estado cambios'; return; }
   const info = estado.libro?.capitulos.find((c) => c.ruta === estado.cap?.ruta);
-  if (hayCambios()) { el.textContent = 'Cambios sin guardar'; el.className = 'estado cambios'; }
+  if (hayCambios()) { el.textContent = SYNC.fallo ? 'Sin guardar · reintentando…' : 'Se guarda solo en un momento'; el.className = 'estado cambios'; }
   else if (info?.pendiente) { el.textContent = 'Guardado · falta aprobar'; el.className = 'estado pendiente'; el.title = 'Los cambios están guardados en el borrador; pasan a la versión publicada cuando quien publica los aprueba.'; }
   else { el.textContent = 'Guardado · publicado'; el.className = 'estado ok'; el.title = 'Este capítulo coincide con la versión publicada.'; }
 }
@@ -208,24 +218,34 @@ function alEditar() {
     else almacen.del(claveBorrador(estado.cap.ruta));
   }, 500);
 }
-$('src').addEventListener('input', alEditar);
+function programarAutoguardado() {
+  clearTimeout(SYNC.tAuto);
+  if (!estado.cap || estado.viendoVersion || $('src').readOnly || !hayCambios()) return;
+  SYNC.tAuto = setTimeout(() => guardar(null, { auto: true }), SYNC.fallo ? 8000 : 2500);
+}
+$('src').addEventListener('input', () => { alEditar(); programarAutoguardado(); });
 window.Deshacer?.iniciar({ textarea: $('src'), deshacer: $('b-deshacer'), rehacer: $('b-rehacer') });
 
 window.addEventListener('beforeunload', (e) => { if (hayCambios()) { e.preventDefault(); e.returnValue = ''; } });
 
 // ------------------------------------------------------------ Guardar y conflictos
-async function guardar(forzarSha) {
+async function guardar(forzarSha, { auto = false, intento = 0 } = {}) {
   if (!estado.cap || estado.viendoVersion) return;
-  if (!hayCambios() && !forzarSha) { aviso('No hay cambios para guardar.'); return; }
-  const btn = $('b-guardar'); btn.textContent = 'Guardando…';
+  if (!hayCambios() && !forzarSha) { if (!auto) aviso('No hay cambios para guardar.'); return; }
+  if (SYNC.guardando) { SYNC.reintentar = true; return; }
+  clearTimeout(SYNC.tAuto);
+  SYNC.guardando = true; actualizarEstado();
+  const btn = $('b-guardar'); if (!auto) btn.textContent = 'Guardando…';
   const nota = $('nota').value.trim();
   const libroTitulo = estado.libros.find((l) => l.id === estado.libro.id)?.titulo || estado.libro.id;
   const mensaje = `${libroTitulo} · ${estado.cap.titulo}: ${nota || 'corrección'}`;
   const texto = $('src').value;
+  const ruta = estado.cap.ruta;
   try {
-    const r = await api('/api/archivo', { metodo: 'PUT', cuerpo: { ruta: estado.cap.ruta, texto, sha: forzarSha || estado.cap.sha, mensaje } });
-    estado.cap.sha = r.sha; estado.cap.original = texto;
-    const info = estado.libro.capitulos.find((c) => c.ruta === estado.cap.ruta);
+    const r = await api('/api/archivo', { metodo: 'PUT', cuerpo: { ruta, texto, sha: forzarSha || estado.cap.sha, mensaje } });
+    if (estado.cap?.ruta !== ruta) return;          // mientras tanto se abrió otro capítulo
+    estado.cap.sha = r.sha; estado.cap.original = texto; estado.cap.commit = r.commit || null; SYNC.etag = ''; SYNC.fallo = false;
+    const info = estado.libro.capitulos.find((c) => c.ruta === ruta);
     if (info) info.sha = r.sha;
     const nuevoTitulo = texto.match(/^#\s+(.+)$/m)?.[1]?.trim();
     if (nuevoTitulo && info && nuevoTitulo !== info.titulo) {
@@ -233,20 +253,96 @@ async function guardar(forzarSha) {
       const opt = [...$('sel-cap').options].find((o) => o.value === info.ruta);
       if (opt) opt.textContent = opt.textContent.replace(/·.*$/, `· ${nuevoTitulo}`);
     }
-    almacen.del(claveBorrador(estado.cap.ruta));
-    $('nota').value = '';
+    if (!hayCambios()) almacen.del(claveBorrador(ruta)); else almacen.set(claveBorrador(ruta), { texto: $('src').value, sha: estado.cap.sha, fecha: Date.now() });
+    if (nota) $('nota').value = '';
     if (info) info.pendiente = true;
-    actualizarPendientes(); aviso(estado.usuario?.publicador ? 'Guardado en el borrador (aprobalo en «Cambios»)' : 'Guardado: queda pendiente de aprobación');
+    actualizarPendientes();
+    if (!auto) aviso(estado.usuario?.publicador ? 'Guardado en el borrador (aprobalo en «Cambios»)' : 'Guardado: queda pendiente de aprobación');
   } catch (e) {
+    if (e.status === 409 && e.datos?.actual && intento < 3) {
+      // otra persona guardó mientras tanto: se fusionan los dos cambios y se vuelve a guardar
+      aplicarRemoto(e.datos.actual.texto, e.datos.actual.sha, { nombre: e.datos.por });
+      SYNC.guardando = false;
+      if (!auto) btn.textContent = 'Guardar';
+      await guardar(null, { auto, intento: intento + 1 });
+      return;
+    }
     if (e.status === 409) {
       estado.conflicto = e.datos;
       const cuando = e.datos.fecha ? new Date(e.datos.fecha).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' }) : '';
       $('conflicto-msg').textContent = `${e.datos.por || 'Otra persona'} guardó este capítulo${cuando ? ' el ' + cuando : ''} mientras lo editabas. Si guardás la tuya, reemplazás esos cambios (aunque siguen en el historial).`;
-      almacen.set(claveBorrador(estado.cap.ruta), { texto, sha: estado.cap.sha, fecha: Date.now() });
+      almacen.set(claveBorrador(ruta), { texto, sha: estado.cap.sha, fecha: Date.now() });
       $('dlg-conflicto').showModal();
-    } else aviso(e.message, 5000);
-  } finally { btn.textContent = 'Guardar'; }
+    } else {
+      SYNC.fallo = true;
+      if (!auto) aviso(e.message, 5000);
+    }
+  } finally {
+    SYNC.guardando = false; if (!auto) btn.textContent = 'Guardar';
+    actualizarEstado();
+    if (hayCambios() && (SYNC.reintentar || SYNC.fallo || auto)) { SYNC.reintentar = false; programarAutoguardado(); }
+  }
 }
+
+// Trae a la pantalla lo que otra persona guardó, sin perder lo que uno está escribiendo.
+function aplicarRemoto(textoRemoto, shaRemoto, autor = {}) {
+  const ta = $('src'); const base = estado.cap.original; const local = ta.value;
+  const puntoVisible = () => {            // posición del texto que está en el borde superior de lo que se ve
+    let lo = 0, hi = local.length;
+    for (let k = 0; k < 18 && lo < hi; k++) { const mid = (lo + hi) >> 1; if (alturaTextoHasta(mid) < ta.scrollTop + 4) lo = mid + 1; else hi = mid; }
+    return lo;
+  };
+  const arriba = puntoVisible(); const dy = alturaTextoHasta(arriba) - ta.scrollTop;
+  const m = window.Colaborar.fusionar(base, local, textoRemoto, [ta.selectionStart, ta.selectionEnd, arriba]);
+  const hayTexto = m.texto !== local;
+  estado.cap.original = textoRemoto; estado.cap.sha = shaRemoto; estado.cap.commit = null; SYNC.etag = '';
+  const info = estado.libro.capitulos.find((c) => c.ruta === estado.cap.ruta); if (info) info.sha = shaRemoto;
+  if (hayTexto) {
+    window.Colaborar.textoPuesto(m.texto, m.remotos, autor.nombre || 'otra persona');
+    window.Deshacer.remoto(() => {
+      ta.value = m.texto;
+      if (document.activeElement === ta) ta.setSelectionRange(m.puntos[0], m.puntos[1]);
+    }, base, textoRemoto);
+    ta.scrollTop = Math.max(0, alturaTextoHasta(m.puntos[2]) - dy);
+    alEditar();
+  }
+  if (m.remotos.length) {
+    const b = $('b-ircambio'); b.hidden = false; b.textContent = `${autor.nombre || 'Otra persona'} editó · ver`;
+    clearTimeout(aplicarRemoto.t); aplicarRemoto.t = setTimeout(() => { b.hidden = true; }, 40000);
+  }
+  if (m.conflictos) aviso(`${autor.nombre || 'Otra persona'} y vos cambiaron lo mismo en ${m.conflictos} lugar${m.conflictos > 1 ? 'es' : ''}: quedó lo tuyo (lo de ${autor.nombre || 'la otra persona'} sigue en el Historial).`, 7000);
+  else if (m.remotos.length) aviso(`${autor.nombre || 'Otra persona'} cambió ${m.remotos.length} lugar${m.remotos.length > 1 ? 'es' : ''} de este capítulo.`, 3500);
+}
+$('b-ircambio').onclick = () => {
+  const r = window.Colaborar.ultimosRemotos()[0]; if (r) mostrarEnTexto(r.ini, r.fin, false);
+};
+$('resaltar').onchange = (e) => window.Colaborar?.activar(e.target.checked);
+
+// Cada pocos segundos se pregunta si alguien más guardó este capítulo.
+async function sondear() {
+  clearTimeout(SYNC.tSondeo);
+  const siguiente = () => { SYNC.tSondeo = setTimeout(sondear, document.hidden ? 20000 : document.hasFocus() ? 4000 : 12000); };
+  if (!estado.cap || estado.viendoVersion || SYNC.guardando || document.hidden || !estado.usuario) return siguiente();
+  const ruta = estado.cap.ruta;
+  try {
+    const v = await api(`/api/version?ruta=${encodeURIComponent(ruta)}&etag=${encodeURIComponent(SYNC.etag || '')}`);
+    if (estado.cap?.ruta !== ruta || SYNC.guardando) return siguiente();
+    if (v.cambio) {
+      if (v.etag) SYNC.etag = v.etag;
+      if (v.commit && v.commit !== estado.cap.commit) {
+        const a = await api(`/api/archivo?ruta=${encodeURIComponent(ruta)}`);
+        if (estado.cap?.ruta === ruta && !SYNC.guardando) {
+          if (a.sha !== estado.cap.sha) aplicarRemoto(a.texto, a.sha, { nombre: v.autor });
+          estado.cap.commit = v.commit;
+        }
+      }
+    }
+  } catch { /* sin conexión: se vuelve a intentar */ }
+  siguiente();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) sondear(); });
+window.addEventListener('focus', () => sondear());
+sondear();
 $('b-guardar').onclick = () => guardar();
 document.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); guardar(); }
@@ -486,6 +582,30 @@ function aplicar(t) {
     reemplazar(b, b, ins, b + 4, b + 4 + cap.length);
   }
 }
+
+// ------------------------------------------------------------ Buscar en todo el libro
+// Lleva el texto a una posición y deja el cursor ahí (con el texto elegido).
+let espejoTexto = null;
+function alturaTextoHasta(pos) {
+  const ta = $('src');
+  if (!espejoTexto) { espejoTexto = document.createElement('div'); espejoTexto.setAttribute('aria-hidden', 'true'); document.body.appendChild(espejoTexto); }
+  const cs = getComputedStyle(ta);
+  Object.assign(espejoTexto.style, { position: 'absolute', visibility: 'hidden', top: '0', left: '-9999px', whiteSpace: 'pre-wrap', overflowWrap: 'break-word',
+    width: ta.clientWidth + 'px', font: cs.font, lineHeight: cs.lineHeight, letterSpacing: cs.letterSpacing, padding: cs.padding, boxSizing: 'border-box', tabSize: cs.tabSize });
+  espejoTexto.textContent = ta.value.slice(0, pos) + '\u200b';
+  return espejoTexto.scrollHeight - parseFloat(cs.paddingBottom || 0);
+}
+function mostrarEnTexto(ini, fin, enfocar = true) {
+  const ta = $('src');
+  if (enfocar) ta.focus({ preventScroll: true });
+  ta.setSelectionRange(ini, fin ?? ini);
+  ta.scrollTop = Math.max(0, alturaTextoHasta(ini) - ta.clientHeight / 3);
+}
+window.Buscar?.iniciar({
+  textarea: $('src'), api, libro: () => estado.libro, capActual: () => estado.cap?.ruta,
+  abrirCapitulo: (ruta) => { $('sel-cap').value = ruta; return abrirCapitulo(ruta); },
+  mostrar: mostrarEnTexto,
+});
 
 // ------------------------------------------------------------ Fotos
 const versionFoto = {};   // ruta relativa -> marca para no ver la foto vieja guardada en el navegador
@@ -771,9 +891,49 @@ window.Ortografia?.iniciar({
   aviso,
   alAgregarPalabra: (palabra) => api('/api/diccionario', { metodo: 'POST', cuerpo: { ruta: estado.libro?.diccionarioRuta, palabra } }),
 });
+window.Colaborar?.iniciarResaltado($('src'));
+$('resaltar').checked = window.Colaborar?.resaltadoActivo?.() ?? true;
 $('b-orto').onclick = () => window.Ortografia?.abrirPanel($('dlg-orto'), $('orto-lista'));
 $('b-escucha').onclick = () => { location.href = `escucha.html?libro=${encodeURIComponent(estado.libro?.id || '')}&cap=${encodeURIComponent(estado.cap?.ruta || '')}`; };
-$('b-orto-opc').onclick = () => window.Ortografia?.abrirOpciones($('dlg-orto-opc'), $('orto-opc'), estado.libro?.palabrasDiccionario || 0);
+$('b-orto-opc').onclick = () => {
+  window.Ortografia?.abrirOpciones($('dlg-orto-opc'), $('orto-opc'), estado.libro?.palabrasDiccionario || 0);
+  const b = document.createElement('button'); b.type = 'button'; b.textContent = 'Ver y editar el diccionario'; b.className = 'dic-abrir';
+  b.onclick = () => { $('dlg-orto-opc').close(); abrirDiccionario(); };
+  $('orto-opc').querySelector('.opc-fija:last-of-type')?.after(b);
+};
+
+// ------------------------------------------------------------ Diccionario de la colección (ver y quitar palabras)
+let palabrasDic = [];
+async function abrirDiccionario() {
+  if (!estado.libro?.diccionarioRuta) return;
+  $('dic-filtro').value = ''; $('dic-lista').innerHTML = '<li class="cuando">Cargando…</li>';
+  $('dlg-diccionario').showModal();
+  try {
+    const a = await api(`/api/archivo?ruta=${encodeURIComponent(estado.libro.diccionarioRuta)}`);
+    palabrasDic = a.texto.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    dibujarDiccionario();
+  } catch (e) { $('dic-lista').innerHTML = `<li class="error">${esc(e.message)}</li>`; }
+}
+function dibujarDiccionario() {
+  const q = $('dic-filtro').value.trim().toLocaleLowerCase('es');
+  const norm = (t) => t.toLocaleLowerCase('es').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const lista = palabrasDic.filter((w) => !q || norm(w).includes(norm(q)));
+  $('dic-cuenta').textContent = `${palabrasDic.length} palabras${q ? ` · ${lista.length} coinciden` : ''}`;
+  $('dic-lista').innerHTML = lista.slice(0, 300).map((w) => `<li><span class="que">${esc(w)}</span><div class="der"><button type="button" data-quitar="${esc(w)}">Quitar</button></div></li>`).join('')
+    + (lista.length > 300 ? '<li class="cuando">Hay más: escribí en el buscador para acotar.</li>' : '');
+}
+$('dic-filtro').addEventListener('input', dibujarDiccionario);
+$('dic-lista').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-quitar]'); if (!b) return;
+  const w = b.dataset.quitar; b.disabled = true; b.textContent = 'Quitando…';
+  try {
+    await api('/api/diccionario-quitar', { metodo: 'POST', cuerpo: { ruta: estado.libro.diccionarioRuta, palabra: w } });
+    palabrasDic = palabrasDic.filter((x) => x !== w);
+    estado.libro.palabrasDiccionario = palabrasDic.length;
+    window.Ortografia?.diccionario(palabrasDic);
+    dibujarDiccionario(); aviso(`«${w}» ya no está en el diccionario`);
+  } catch (err) { b.disabled = false; b.textContent = 'Quitar'; aviso(err.message, 5000); }
+});
 
 // ------------------------------------------------------------ Comentarios
 // El texto y el panel de comentarios van uno al lado del otro

@@ -66,5 +66,19 @@
   // Al abrir otro capítulo (o una versión) se empieza de cero.
   function reiniciar() { pila = []; rehacer = []; ultimo = ta.value; antesPend = null; tSnap = Date.now(); botones(); }
 
-  window.Deshacer = { iniciar, reiniciar };
+  // Llegaron cambios de otra persona: se ponen en el texto sin que cuenten como cambio propio, y las
+  // copias guardadas para deshacer los incorporan (así «Deshacer» no borra lo que escribieron los demás).
+  function remoto(poner, base, textoRemoto) {
+    restaurando = true;
+    try { poner(); ta.dispatchEvent(new Event('input', { bubbles: true })); } finally { restaurando = false; }
+    ultimo = ta.value; antesPend = null;
+    const F = window.Colaborar;
+    if (F) {
+      const incorporar = (s) => F.fusionar(base, s, textoRemoto).texto;
+      pila = pila.slice(-20).map(incorporar); rehacer = rehacer.slice(-20).map(incorporar);
+    }
+    botones();
+  }
+
+  window.Deshacer = { iniciar, reiniciar, remoto };
 })();
